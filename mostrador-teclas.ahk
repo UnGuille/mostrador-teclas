@@ -81,12 +81,13 @@ global Presionadas := Map(), Soltadas := Map()
 global Teclas := Map(), Leyendas := Map(), Especiales := Map(), Posiciones := []
 global overlay := 0, txtCombo := 0, txtPrev := 0, U := 40, GuiW := 0, GuiH := 0
 global ih := 0, Recursos := [], Fuentes := Map()
-global Redimension := 0, HwndTeclado := 0
+global Redimension := 0, HwndTeclado := 0, CerrandoMostrador := false
 global Minimizado := false, ControlMinimizar := 0, BotonMinimizar := 0
 global IconoMinX := 0, IconoMinY := 0, BotonAjustes := 0
 global AjustesMouseGui := 0, CamposMouse := 0, ColoresMousePersonalizados := Buffer(64, 0)
 
 try {
+    OnExit(CerrarMostrador)
     OnMessage(0x0047, SeguirPosicionMostrador) ; WM_WINDOWPOSCHANGED
     OnMessage(0x0024, LimitesRedimension) ; WM_GETMINMAXINFO
     OnMessage(0x0083, AreaCompletaTeclado)  ; WM_NCCALCSIZE: borde sin marco visible
@@ -102,7 +103,6 @@ try {
     Construir()
     ConfigurarBandeja()
     CrearControlMinimizar()
-    OnExit(LiberarHaloMouse)
     CrearHaloMouse()
     AplicarResplandorMouse()
 
@@ -863,6 +863,8 @@ RestablecerPosicion() {
 }
 
 AlPresionarMouse(wParam, lParam, msg, hwnd) {
+    if !VentanaMostradorDisponible()
+        return
     global overlay, Bloqueado
     if (Bloqueado || !IsObject(overlay))
         return
@@ -877,6 +879,8 @@ AlPresionarMouse(wParam, lParam, msg, hwnd) {
 }
 
 AlTerminarArrastre(wParam, lParam, msg, hwnd) {
+    if !VentanaMostradorDisponible()
+        return
     global overlay, Anclaje, MargenX, MargenY, Redimension
 
     if (!IsObject(overlay) || hwnd != overlay.Hwnd)
@@ -1209,13 +1213,13 @@ AlternarMouseVisual() {
 ; ============================================================
 
 AreaCompletaTeclado(wParam, lParam, msg, hwnd) {
-    global HwndTeclado
-    global overlay
-    if IsObject(overlay) && hwnd = HwndTeclado
+    if VentanaMostradorDisponible(hwnd)
         return 0
 }
 
 BordeTeclado() {
+    if !VentanaMostradorDisponible()
+        return 0
     global HwndTeclado
     global overlay, Bloqueado, MostrarTeclado
     if (Bloqueado || !MostrarTeclado || !IsObject(overlay))
@@ -1240,6 +1244,8 @@ BordeTeclado() {
 }
 
 DetectarBordeTeclado(wParam, lParam, msg, hwnd) {
+    if !VentanaMostradorDisponible()
+        return
     global HwndTeclado
     global overlay
     if !IsObject(overlay) || hwnd != HwndTeclado
@@ -1251,6 +1257,8 @@ DetectarBordeTeclado(wParam, lParam, msg, hwnd) {
 }
 
 CursorBordeTeclado(wParam, lParam, msg, hwnd) {
+    if !VentanaMostradorDisponible()
+        return
     global HwndTeclado
     global overlay
     if !IsObject(overlay)
@@ -1267,6 +1275,8 @@ CursorBordeTeclado(wParam, lParam, msg, hwnd) {
 }
 
 ComenzarRedimension(wParam, lParam, msg, hwnd) {
+    if !VentanaMostradorDisponible()
+        return
     global HwndTeclado
     global overlay, Bloqueado, MostrarTeclado, Redimension, Escala
     if (!IsObject(overlay) || hwnd != HwndTeclado || Bloqueado || !MostrarTeclado
@@ -1313,6 +1323,8 @@ DimensionesTeclado(escala) {
 }
 
 AjustarRedimension(wParam, lParam, msg, hwnd) {
+    if !VentanaMostradorDisponible()
+        return
     global HwndTeclado
     global overlay, Redimension
     if (!IsObject(Redimension) || !IsObject(overlay) || hwnd != HwndTeclado)
@@ -1352,6 +1364,8 @@ AjustarRedimension(wParam, lParam, msg, hwnd) {
 }
 
 ActualizarVistaRedimension(wParam, lParam, msg, hwnd) {
+    if !VentanaMostradorDisponible()
+        return
     global HwndTeclado
     global overlay, Redimension
     if IsObject(Redimension) && IsObject(overlay) && hwnd = HwndTeclado
@@ -1359,6 +1373,8 @@ ActualizarVistaRedimension(wParam, lParam, msg, hwnd) {
 }
 
 FondoVistaRedimension(wParam, lParam, msg, hwnd) {
+    if !VentanaMostradorDisponible()
+        return
     global HwndTeclado
     global overlay, Redimension
     if IsObject(Redimension) && IsObject(overlay) && hwnd = HwndTeclado
@@ -1366,6 +1382,8 @@ FondoVistaRedimension(wParam, lParam, msg, hwnd) {
 }
 
 PintarVistaRedimension(wParam, lParam, msg, hwnd) {
+    if !VentanaMostradorDisponible()
+        return
     global HwndTeclado
     global overlay, Redimension
     if (!IsObject(Redimension) || !IsObject(overlay) || hwnd != HwndTeclado)
@@ -1384,6 +1402,8 @@ PintarVistaRedimension(wParam, lParam, msg, hwnd) {
 }
 
 TerminarRedimension() {
+    if !VentanaMostradorDisponible()
+        return
     global HwndTeclado
     global overlay, Redimension, Escala, Anclaje, MargenX, MargenY
     if !IsObject(Redimension)
@@ -1404,6 +1424,8 @@ TerminarRedimension() {
 
 
 LimitesRedimension(wParam, lParam, msg, hwnd) {
+    if !VentanaMostradorDisponible()
+        return
     global HwndTeclado, MostrarTeclado
     if (hwnd != HwndTeclado || !MostrarTeclado)
         return
@@ -1639,12 +1661,16 @@ CrearControlMinimizar() {
 }
 
 SeguirPosicionMostrador(wParam, lParam, msg, hwnd) {
+    if !VentanaMostradorDisponible()
+        return
     global HwndTeclado, Minimizado
     if (hwnd = HwndTeclado && !Minimizado)
         ActualizarControlMinimizar()
 }
 
 ActualizarControlMinimizar() {
+    if !VentanaMostradorDisponible()
+        return
     global ControlMinimizar, BotonMinimizar, BotonAjustes, Minimizado, Visible, overlay, U
     global IconoMinX, IconoMinY, MostrarTeclado, MostrarHistorial
     if !IsObject(ControlMinimizar)
@@ -1868,4 +1894,55 @@ AplicarAjustesMouse() {
         AgregarAlHistorial("Ajustes del aura guardados")
     AjustesMouseGui.Opt("+AlwaysOnTop")
     AjustesMouseGui.Show()
+}
+
+
+; Los mensajes de Windows tambien pueden llegar durante la liberacion de globals.
+; IsSet y el HWND nulo impiden leer una GUI que ya no existe.
+VentanaMostradorDisponible(hwnd := 0) {
+    global CerrandoMostrador, HwndTeclado, overlay
+    if (!IsSet(CerrandoMostrador) || CerrandoMostrador)
+        return false
+    if (!IsSet(HwndTeclado) || !HwndTeclado)
+        return false
+    if (!IsSet(overlay) || !IsObject(overlay))
+        return false
+    return (hwnd = 0 || hwnd = HwndTeclado) && DllCall("IsWindow", "ptr", HwndTeclado)
+}
+
+CerrarMostrador(*) {
+    global CerrandoMostrador, HwndTeclado, overlay, ih, HistorialBitmap, Redimension
+    CerrandoMostrador := true
+    HwndTeclado := 0
+    ; Desconectar primero: destruir las ventanas genera mas mensajes de Windows.
+    OnMessage(0x0047, SeguirPosicionMostrador, 0)
+    OnMessage(0x0024, LimitesRedimension, 0)
+    OnMessage(0x0083, AreaCompletaTeclado, 0)
+    OnMessage(0x0084, DetectarBordeTeclado, 0)
+    OnMessage(0x0020, CursorBordeTeclado, 0)
+    OnMessage(0x00A1, ComenzarRedimension, 0)
+    OnMessage(0x0214, AjustarRedimension, 0)
+    OnMessage(0x000F, PintarVistaRedimension, 0)
+    OnMessage(0x0014, FondoVistaRedimension, 0)
+    OnMessage(0x0005, ActualizarVistaRedimension, 0)
+    OnMessage(0x0201, AlPresionarMouse, 0)
+    OnMessage(0x0232, AlTerminarArrastre, 0)
+    for temporizador in [Tick, AnimarTeclas, ActualizarHaloMouse, TerminarRedimension]
+        SetTimer(temporizador, 0)
+    if IsSet(ih) && IsObject(ih)
+        ih.Stop()
+    LiberarHaloMouse()
+    if IsSet(overlay) && IsObject(overlay)
+        overlay.Destroy()
+    overlay := 0
+    if IsObject(Redimension) {
+        DllCall("SelectObject", "ptr", Redimension.dc, "ptr", Redimension.old)
+        DllCall("DeleteObject", "ptr", Redimension.bmp)
+        DllCall("DeleteDC", "ptr", Redimension.dc)
+        Redimension := 0
+    }
+    if HistorialBitmap
+        DllCall("DeleteObject", "ptr", HistorialBitmap)
+    HistorialBitmap := 0
+    LiberarRecursos()
 }
