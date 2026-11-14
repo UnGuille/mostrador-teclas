@@ -323,10 +323,10 @@ Construir() {
         }
 
         ; Cada tecla es UNA sola imagen (sin controles encimados = nunca se despinta).
-        ; Se dibujan de antemano las 3 versiones: normal, amarilla y roja.
+        ; Se precalculan los estados elevados y hundidos, con sus colores.
         pic := overlay.AddText(Format("x{} y{} w{} h{} +0xE", kx, ky, kw, kh))   ; 0xE = SS_BITMAP
         bmps := Map()
-        for estado in ["", "normal", "mod"]
+        for estado in ["", "normal", "mod", "normal-down", "mod-down"]
             bmps[estado] := DibujarTecla(kw, kh, estado, legs)
         SendMessage(0x172, 0, bmps[""], pic)   ; STM_SETIMAGE
         Teclas[pos.sc] := {pic: pic, bmps: bmps, estado: ""}
@@ -343,9 +343,11 @@ Leg(x, y, w, h, texto, px, negrita, rol, align) {
 }
 
 PintarTecla(sc, estado) {
-    global Teclas
+    global Teclas, Presionadas
     if !Teclas.Has(sc)
         return
+    if (estado != "" && Presionadas.Has(sc))
+        estado .= "-down"
     k := Teclas[sc]
     if (k.estado = estado)
         return
@@ -369,16 +371,21 @@ DibujarTecla(w, h, estado, legs) {
     DllCall("FillRect", "ptr", hdc, "ptr", rc, "ptr", br)
     DllCall("DeleteObject", "ptr", br)
 
-    ; Tecla con esquinas redondeadas
-    colorTecla := (estado = "mouse") ? "454545" : (estado = "mod") ? Col.mod : (estado = "normal") ? Col.normal : Col.tecla
-    br := DllCall("CreateSolidBrush", "uint", BGR(colorTecla), "ptr")
-    oldBr  := DllCall("SelectObject", "ptr", hdc, "ptr", br, "ptr")
-    oldPen := DllCall("SelectObject", "ptr", hdc, "ptr", DllCall("GetStockObject", "int", 8, "ptr"), "ptr") ; NULL_PEN
+    ; Base fija y superficie elevada: al pulsar baja la cara de la tecla.
+    hundida := InStr(estado, "-down") != 0
+    estado := StrReplace(estado, "-down")
+    profundidad := Max(2, Round(U * 0.10))
+    desplazamiento := hundida ? profundidad - 1 : 0
+    altoCara := h - profundidad
     r := Max(4, Round(U * 0.16))
-    DllCall("RoundRect", "ptr", hdc, "int", 0, "int", 0, "int", w + 1, "int", h + 1, "int", r, "int", r)
-    DllCall("SelectObject", "ptr", hdc, "ptr", oldPen)
-    DllCall("SelectObject", "ptr", hdc, "ptr", oldBr)
-    DllCall("DeleteObject", "ptr", br)
+    colorTecla := (estado = "mod") ? Col.mod : (estado = "normal") ? Col.normal : Col.tecla
+    borde := hundida ? "101010" : (estado = "mod") ? "FF7276" : (estado = "normal") ? "FFF19A" : "606060"
+    base := (estado = "mod") ? "741216" : (estado = "normal") ? "80620B" : "171717"
+    RectTecla(hdc, 0, profundidad, w, h, r, base)
+    RectTecla(hdc, 0, desplazamiento, w, desplazamiento + altoCara, r, borde)
+    bisel := Max(1, Round(U * 0.035))
+    RectTecla(hdc, bisel, desplazamiento + bisel, w - bisel,
+        desplazamiento + altoCara - bisel, Max(2, r - bisel), colorTecla)
 
     ; Leyendas
     DllCall("SetBkMode", "ptr", hdc, "int", 1)   ; TRANSPARENT
@@ -390,7 +397,8 @@ DibujarTecla(w, h, estado, legs) {
         rol := lg.rol
         colorTxt := (estado = "" || estado = "mouse") ? Col.%rol% : (estado = "mod") ? Col.modTxt : Col.normalTxt
         DllCall("SetTextColor", "ptr", hdc, "uint", BGR(colorTxt))
-        NumPut("int", lg.x, "int", lg.y, "int", lg.x + lg.w, "int", lg.y + lg.h, rc)
+        NumPut("int", lg.x, "int", desplazamiento + Round(lg.y * altoCara / h),
+            "int", lg.x + lg.w, "int", desplazamiento + Round((lg.y + lg.h) * altoCara / h), rc)
         ; SINGLELINE | VCENTER | NOPREFIX + alineacion
         DllCall("DrawTextW", "ptr", hdc, "str", lg.texto, "int", -1, "ptr", rc, "uint", lg.align | 0x20 | 0x4 | 0x800)
     }
@@ -401,6 +409,17 @@ DibujarTecla(w, h, estado, legs) {
     DllCall("DeleteDC", "ptr", hdc)
     Recursos.Push(hbm)
     return hbm
+}
+
+; Dibuja una capa del relieve sin dejar objetos GDI seleccionados.
+RectTecla(dc, x1, y1, x2, y2, radio, color) {
+    br := DllCall("CreateSolidBrush", "uint", BGR(color), "ptr")
+    oldBr := DllCall("SelectObject", "ptr", dc, "ptr", br, "ptr")
+    oldPen := DllCall("SelectObject", "ptr", dc, "ptr", DllCall("GetStockObject", "int", 8, "ptr"), "ptr")
+    DllCall("RoundRect", "ptr", dc, "int", x1, "int", y1, "int", x2, "int", y2, "int", radio, "int", radio)
+    DllCall("SelectObject", "ptr", dc, "ptr", oldPen)
+    DllCall("SelectObject", "ptr", dc, "ptr", oldBr)
+    DllCall("DeleteObject", "ptr", br)
 }
 
 Fuente(px, negrita) {
@@ -463,6 +482,7 @@ TeclaArriba(ih, vk, sc) {
     if Presionadas.Has(sc) {
         Presionadas.Delete(sc)
         Soltadas[sc] := A_TickCount
+        PintarTecla(sc, EsModificador(sc) ? "mod" : "normal")
     }
 }
 
@@ -634,6 +654,7 @@ Tick() {
     for sc in sueltas {
         Presionadas.Delete(sc)
         Soltadas[sc] := ahora
+        PintarTecla(sc, EsModificador(sc) ? "mod" : "normal")
     }
 
     apagar := []
@@ -703,9 +724,11 @@ AlternarDistribucion() {
 }
 
 Reconstruir(mensaje) {
-    global Presionadas
+    global Presionadas, Soltadas
     Construir()
     for sc in Presionadas
+        PintarTecla(sc, EsModificador(sc) ? "mod" : "normal")
+    for sc in Soltadas
         PintarTecla(sc, EsModificador(sc) ? "mod" : "normal")
     AgregarAlHistorial(mensaje)
 }
