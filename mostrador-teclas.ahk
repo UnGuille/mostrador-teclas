@@ -65,7 +65,8 @@ global HaloTam := 88, HaloX := "", HaloY := ""
 
 ; ---------------- ESTADO ----------------
 global Bloqueado := false, Visible := false
-global Historial := [], UltimaTick := 0
+global Historial := [], UltimaTick := 0, AvisoActual := ""
+global HistorialPic := 0, HistorialBitmap := 0, HistorialW := 0, HistorialH := 0
 global Presionadas := Map(), Soltadas := Map()
 global Teclas := Map(), Leyendas := Map(), Especiales := Map(), Posiciones := []
 global overlay := 0, txtCombo := 0, txtPrev := 0, U := 40, GuiW := 0, GuiH := 0
@@ -106,7 +107,7 @@ try {
         Hotkey("~*" boton, ManejarMouse)
 
     SetTimer(Tick, 100)
-    AgregarAlHistorial("Listo: teclas animadas (recorrido de 6 px)")
+    AgregarAlHistorial("Listo: historial visual · pulsa una tecla")
 } catch as err {
     MsgBox("ERROR AL INICIAR:`n`n" err.Message "`n`nLínea: " err.Line, "Mostrador de teclas - error", "Icon!")
     ExitApp()
@@ -260,11 +261,15 @@ CargarNombres() {
 Construir() {
     global overlay, txtCombo, txtPrev, Teclas, U, GuiW, GuiH, Visible, HwndTeclado
     global Escala, Bloqueado, MostrarTeclado, Col, Posiciones, Leyendas, Especiales, MostrarMouse, PartesMouse
+    global HistorialPic, HistorialBitmap, HistorialW, HistorialH
 
     SetTimer(AnimarTeclas, 0)
     HwndTeclado := 0
     if IsObject(overlay)
         overlay.Destroy()
+    if HistorialBitmap
+        DllCall("DeleteObject", "ptr", HistorialBitmap)
+    HistorialBitmap := 0, HistorialPic := 0
     LiberarRecursos()          ; borrar imagenes/fuentes de la version anterior
     Teclas := Map()
     PartesMouse := Map()
@@ -282,14 +287,16 @@ Construir() {
     overlay.BackColor := Col.fondo
     overlay.OnEvent("Close", (*) => ExitApp())
 
-    ; ----- Modo solo texto -----
+    ; ----- Modo solo historial (sin teclado fisico) -----
     if !MostrarTeclado {
         overlay.MarginX := pad
         overlay.MarginY := Round(pad * 0.6)
-        overlay.SetFont("s" Pt(U * 0.6) " c" Col.barra " bold", "Consolas")
-        txtCombo := overlay.AddText("x" overlay.MarginX " y" overlay.MarginY " +0x80", "")
-        txtPrev := 0
-        WinSetTransparent(235, overlay)
+        HistorialW := Round(14 * U), HistorialH := Round(3.8 * U)
+        GuiW := HistorialW + 2 * overlay.MarginX
+        GuiH := HistorialH + 2 * overlay.MarginY
+        HistorialPic := overlay.AddText(Format("x{} y{} w{} h{} +0xE", overlay.MarginX, overlay.MarginY, HistorialW, HistorialH))
+        txtCombo := 0, txtPrev := 0
+        WinSetTransparent(245, overlay)
         return
     }
 
@@ -297,17 +304,19 @@ Construir() {
     overlay.MarginX := 0
     overlay.MarginY := 0
     anchoTec := Round(18.5 * U)
-    barH := U
+    barH := Round(0.75 * U)
     GuiW := anchoTec + 2 * pad + (MostrarMouse ? Round(3.5 * U) : 0)
-    top := pad + barH + Round(U * 0.2)
+    HistorialW := GuiW - 2 * pad
+    HistorialH := Round(1.25 * U)
+    historialY := pad + barH + Round(U * 0.15)
+    top := historialY + HistorialH + Round(U * 0.2)
     GuiH := top + Round(6.25 * U) + pad
 
-    ; Barra superior: combinacion actual (grande) y anteriores (gris)
-    anchoCombo := Round(anchoTec * 0.62)
-    overlay.SetFont("s" Pt(U * 0.55) " c" Col.barra " bold", "Segoe UI")
-    txtCombo := overlay.AddText(Format("x{} y{} w{} h{} +0x200 +0x80 +0x4000", pad, pad, anchoCombo, barH), "")
-    overlay.SetFont("s" Pt(U * 0.3) " c" Col.previo " norm", "Segoe UI")
-    txtPrev := overlay.AddText(Format("x{} y{} w{} h{} Right +0x200 +0x80 +0x4000", pad + anchoCombo, pad, anchoTec - anchoCombo, barH), "")
+    ; El estado actual es grande; el historial usa mini teclas de otra paleta.
+    overlay.SetFont("s" Pt(U * 0.45) " c" Col.barra " bold", "Segoe UI")
+    txtCombo := overlay.AddText(Format("x{} y{} w{} h{} +0x200 +0x80 +0x4000", pad, pad, HistorialW, barH), "")
+    txtPrev := 0
+    HistorialPic := overlay.AddText(Format("x{} y{} w{} h{} +0xE", pad, historialY, HistorialW, HistorialH))
 
     ; Teclas
     g := Max(2, Round(U * 0.06))
@@ -525,7 +534,7 @@ TeclaAbajo(ih, vk, sc) {
     if Soltadas.Has(sc)
         Soltadas.Delete(sc)
     PintarTecla(sc, EsModificador(sc) ? "mod" : "normal")
-    AgregarAlHistorial(TextoCombo(sc, vk))
+    AgregarAlHistorial(TextoCombo(sc, vk), true)
 }
 
 TeclaArriba(ih, vk, sc) {
@@ -547,7 +556,7 @@ ManejarMouse(HotkeyName) {
     txt := ""
     for m in ModsActivos()
         txt .= m " + "
-    AgregarAlHistorial(txt NombreAmigable(SubStr(HotkeyName, 3)))
+    AgregarAlHistorial(txt NombreAmigable(SubStr(HotkeyName, 3)), true)
 }
 
 ; Modificadores presionados en este momento (sin repetir el actual)
@@ -616,8 +625,15 @@ NombreAmigable(tecla) {
 ;  HISTORIAL Y VISIBILIDAD
 ; ============================================================
 
-AgregarAlHistorial(texto) {
-    global Historial, UltimaTick
+AgregarAlHistorial(texto, esEntrada := false) {
+    global Historial, UltimaTick, AvisoActual
+    UltimaTick := A_TickCount
+    if !esEntrada {
+        AvisoActual := texto
+        Refrescar()
+        return
+    }
+    AvisoActual := ""
     n := Historial.Length
     ultima := n ? Historial[n] : ""
     base := RegExReplace(ultima, " ×\d+$")
@@ -648,31 +664,20 @@ QuitarUltimo(texto) {
 }
 
 Refrescar() {
-    global Historial, MostrarTeclado, txtCombo, txtPrev, overlay, GuiW, GuiH
-    n := Historial.Length
+    global Historial, MostrarTeclado, txtCombo, AvisoActual
+    global HistorialPic, HistorialBitmap, HistorialW, HistorialH, Redimension
+    if IsObject(Redimension)
+        return
     if MostrarTeclado {
-        txtCombo.Text := n ? Historial[n] : ""
-        prev := ""
-        i := n - 1
-        while (i >= 1 && i >= n - 2) {
-            prev .= (prev = "" ? "" : "      ") Historial[i]
-            i--
-        }
-        txtPrev.Text := prev
-    } else {
-        if !n {
-            Ocultar()
-            return
-        }
-        texto := ""
-        for i, linea in Historial
-            texto .= (i = 1 ? "" : "`n") linea
-        tam := MedirTexto(txtCombo, texto)
-        txtCombo.Move(, , tam[1] + 6, tam[2] + 4)
-        txtCombo.Text := texto
-        GuiW := tam[1] + 6 + overlay.MarginX * 2
-        GuiH := tam[2] + 4 + overlay.MarginY * 2
+        n := Historial.Length
+        txtCombo.Text := AvisoActual != "" ? AvisoActual : n ? "AHORA  " Historial[n] : "AHORA  —"
     }
+    nuevo := DibujarHistorial(HistorialW, HistorialH, !MostrarTeclado)
+    SendMessage(0x172, 0, nuevo, HistorialPic)
+    anterior := HistorialBitmap
+    HistorialBitmap := nuevo
+    if anterior
+        DllCall("DeleteObject", "ptr", anterior)
     Mostrar()
 }
 
@@ -888,7 +893,7 @@ ConfigurarBandeja() {
     A_TrayMenu.Add("Resplandor del mouse  (Ctrl+Alt+M)", (*) => AlternarResplandorMouse())
     A_TrayMenu.Add()
     A_TrayMenu.Add("Salir  (Ctrl+Alt+Q)", (*) => ExitApp())
-    A_IconTip := "Mostrador de teclas - pulsacion animada"
+    A_IconTip := "Mostrador de teclas - historial visual y pulsacion animada"
 }
 
 
@@ -1222,7 +1227,8 @@ DimensionesTeclado(escala) {
     unidad := Round(40 * escala * A_ScreenDPI / 96)
     pad := Round(unidad * 0.3)
     w := Round(18.5 * unidad) + 2 * pad + (MostrarMouse ? Round(3.5 * unidad) : 0)
-    h := pad + unidad + Round(unidad * 0.2) + Round(6.25 * unidad) + pad
+    h := pad + Round(unidad * 0.75) + Round(unidad * 0.15) + Round(unidad * 1.25)
+        + Round(unidad * 0.2) + Round(6.25 * unidad) + pad
     return [w, h]
 }
 
@@ -1325,4 +1331,152 @@ LimitesRedimension(wParam, lParam, msg, hwnd) {
     NumPut("int", minimo[1], "int", minimo[2], lParam, 24)
     NumPut("int", maximo[1], "int", maximo[2], lParam, 32)
     return 0
+}
+
+
+; ============================================================
+; HISTORIAL CON MINI TECLAS: turquesa (normal), violeta (modificador)
+; ============================================================
+
+PartesEntradaHistorial(texto) {
+    veces := ""
+    if RegExMatch(texto, " ×(\d+)$", &m) {
+        veces := "×" m[1]
+        texto := RegExReplace(texto, " ×\d+$")
+    }
+    lados := StrSplit(texto, "⇒")
+    teclas := StrSplit(Trim(lados[1]), [" + "])
+    partes := []
+    for i, tecla in teclas {
+        if (i > 1)
+            partes.Push({texto: "+", tipo: "separador"})
+        modificador := (tecla = "Ctrl" || tecla = "Shift" || tecla = "Alt" || tecla = "Alt Gr" || tecla = "Win")
+        partes.Push({texto: tecla, tipo: modificador ? "mod" : "tecla"})
+    }
+    if lados.Length > 1
+        partes.Push({texto: "⇒ " Trim(lados[2]), tipo: "resultado"})
+    if veces != ""
+        partes.Push({texto: veces, tipo: "veces"})
+    return partes
+}
+
+AnchoTextoHistorial(dc, texto, px) {
+    old := DllCall("SelectObject", "ptr", dc, "ptr", Fuente(px, true), "ptr")
+    tam := Buffer(8, 0)
+    DllCall("GetTextExtentPoint32W", "ptr", dc, "str", texto, "int", StrLen(texto), "ptr", tam)
+    DllCall("SelectObject", "ptr", dc, "ptr", old)
+    return NumGet(tam, 0, "int")
+}
+
+TextoHistorial(dc, texto, x, y, w, h, px, color, centrado := false) {
+    if (w <= 0 || h <= 0)
+        return
+    old := DllCall("SelectObject", "ptr", dc, "ptr", Fuente(px, true), "ptr")
+    DllCall("SetBkMode", "ptr", dc, "int", 1)
+    DllCall("SetTextColor", "ptr", dc, "uint", BGR(color))
+    rc := Buffer(16, 0)
+    NumPut("int", x, "int", y, "int", x + w, "int", y + h, rc)
+    DllCall("DrawTextW", "ptr", dc, "str", texto, "int", -1, "ptr", rc,
+        "uint", 0x20 | 0x4 | 0x800 | 0x8000 | (centrado ? 1 : 0))
+    DllCall("SelectObject", "ptr", dc, "ptr", old)
+}
+
+MedirGrupoHistorial(dc, texto, px) {
+    global U
+    partes := PartesEntradaHistorial(texto)
+    total := 0, gap := Max(2, Round(U * 0.08))
+    for parte in partes {
+        relleno := (parte.tipo = "tecla" || parte.tipo = "mod") ? Round(U * 0.3) : Round(U * 0.08)
+        parte.w := Max(Round(U * 0.32), AnchoTextoHistorial(dc, parte.texto, px) + relleno)
+        total += parte.w + gap
+    }
+    return {partes: partes, w: Max(0, total - gap), gap: gap}
+}
+
+PintarGrupoHistorial(dc, grupo, x, y, maxW, alto, px) {
+    global U
+    factor := Min(1.0, maxW / Max(1, grupo.w))
+    for parte in grupo.partes {
+        w := Max(1, Floor(parte.w * factor))
+        if (parte.tipo = "tecla" || parte.tipo = "mod") {
+            esMod := parte.tipo = "mod"
+            borde := esMod ? "B99AE8" : "57D1C7"
+            fondo := esMod ? "42305D" : "174A50"
+            tinta := esMod ? "F2E5FF" : "D2FFF6"
+            RectTecla(dc, x, y, x + w, y + alto, Max(4, Round(U * 0.13)), borde)
+            RectTecla(dc, x + 1, y + 1, x + w - 1, y + alto - 1, Max(3, Round(U * 0.11)), fondo)
+            TextoHistorial(dc, parte.texto, x + 2, y, w - 4, alto, px, tinta, true)
+        } else {
+            tinta := parte.tipo = "resultado" ? "A8D8EF" : "A8B6CC"
+            TextoHistorial(dc, parte.texto, x, y, w, alto, px, tinta, true)
+        }
+        x += w + Floor(grupo.gap * factor)
+    }
+}
+
+DibujarHistorial(w, h, vertical := false) {
+    global Historial, U, AvisoActual
+    pantalla := DllCall("GetDC", "ptr", 0, "ptr")
+    dc := DllCall("CreateCompatibleDC", "ptr", pantalla, "ptr")
+    bmp := DllCall("CreateCompatibleBitmap", "ptr", pantalla, "int", w, "int", h, "ptr")
+    DllCall("ReleaseDC", "ptr", 0, "ptr", pantalla)
+    old := DllCall("SelectObject", "ptr", dc, "ptr", bmp, "ptr")
+    rc := Buffer(16, 0)
+    NumPut("int", w, rc, 8), NumPut("int", h, rc, 12)
+    br := DllCall("CreateSolidBrush", "uint", BGR("141414"), "ptr")
+    DllCall("FillRect", "ptr", dc, "ptr", rc, "ptr", br)
+    DllCall("DeleteObject", "ptr", br)
+    RectTecla(dc, 0, 0, w, h, Round(U * 0.2), "354156")
+    RectTecla(dc, 1, 1, w - 1, h - 1, Round(U * 0.2), "1B2330")
+    pad := Max(4, Round(U * 0.18))
+    cab := Round(U * 0.42), alto := Round(U * 0.62)
+    px := Max(9, Round(U * 0.27))
+    etiqueta := "HISTORIAL  ·  antiguo → reciente"
+    TextoHistorial(dc, etiqueta, pad, 1, w - 2 * pad, cab, Max(8, Round(U * 0.21)), "A8B6CC")
+    n := Historial.Length
+    if !n {
+        TextoHistorial(dc, "Pulsa una tecla o un atajo para comenzar", pad, cab,
+            w - 2 * pad, alto, px, "A8B6CC")
+    } else if vertical {
+        for i, entrada in Historial {
+            grupo := MedirGrupoHistorial(dc, entrada, px)
+            y := cab + (i - 1) * (alto + Round(U * 0.12))
+            PintarGrupoHistorial(dc, grupo, pad, y, w - 2 * pad, alto, px)
+        }
+    } else {
+        grupos := [], total := 0, separacion := Round(U * 0.45)
+        for entrada in Historial {
+            grupo := MedirGrupoHistorial(dc, entrada, px)
+            grupos.Push(grupo)
+            total += grupo.w + separacion
+        }
+        total -= separacion
+        omitidas := false, limite := w - 2 * pad
+        ; Priorizar las acciones recientes completas si no caben las cuatro.
+        while (grupos.Length > 1 && total > limite - (omitidas ? Round(U * 0.5) : 0)) {
+            total -= grupos[1].w + separacion
+            grupos.RemoveAt(1)
+            omitidas := true
+        }
+        x := pad
+        if omitidas {
+            TextoHistorial(dc, "…", x, cab, Round(U * 0.4), alto, px, "A8B6CC")
+            x += Round(U * 0.5)
+        }
+        for i, grupo in grupos {
+            espacio := Min(grupo.w, w - pad - x)
+            PintarGrupoHistorial(dc, grupo, x, cab, espacio, alto, px)
+            x += espacio
+            if i < grupos.Length {
+                TextoHistorial(dc, "›", x, cab, separacion, alto, px, "7E91AB", true)
+                x += separacion
+            }
+        }
+    }
+    if (vertical && AvisoActual != "")
+        TextoHistorial(dc, AvisoActual, pad, h - Round(U * 0.43), w - 2 * pad,
+            Round(U * 0.36), Max(8, Round(U * 0.22)), "A8D8EF")
+    DllCall("SelectObject", "ptr", dc, "ptr", old)
+    DllCall("DeleteDC", "ptr", dc)
+    return bmp
 }

@@ -8,7 +8,7 @@ Hecho con [AutoHotkey v2](https://www.autohotkey.com/) para Windows.
 
 - **Teclas animadas:** bajan y pierden su sombra inferior al pulsarlas, como un teclado físico. El recorrido es de 6 píxeles al tamaño predeterminado, con una transición de 100 ms. Las pulsaciones rápidas permanecen hundidas al menos 180 ms para que se alcancen a ver.
 - **Colores:** amarillo para teclas normales y rojo para modificadores (`Ctrl`, `Shift`, `Alt`, `Alt Gr` y `Win`). Al soltar una tecla, vuelve a subir y conserva el color brevemente.
-- **Combinaciones e historial:** muestra, por ejemplo, `Ctrl + C`, `Alt Gr + Q ⇒ @` o `Shift + 2 ⇒ "`, junto con las combinaciones anteriores.
+- **Combinación actual e historial visual:** la línea «AHORA» muestra la acción reciente. Debajo, una franja independiente representa las últimas cuatro acciones como mini teclas: turquesa para teclas normales y violeta para modificadores, con colores y tamaños distintos del teclado principal. Los atajos se agrupan con signos `+`, los resultados con `⇒` y las repeticiones con `×N`.
 - **Distribuciones Latinoamérica y España:** los símbolos escritos con **Alt Gr** aparecen en azul.
 - **Mouse visual opcional:** cuerpo curvo, botones integrados y rueda central. Los clics izquierdo, derecho y central se iluminan en amarillo; el desplazamiento de la rueda se indica en azul con flechas hacia arriba o abajo. Permite mostrar clics simultáneos.
 - **Resplandor del cursor:** halo amarillo suave que sigue el puntero, sin impedir los clics ni cambiar el foco de la ventana activa. Se controla por separado del mouse visual.
@@ -24,6 +24,17 @@ Hecho con [AutoHotkey v2](https://www.autohotkey.com/) para Windows.
 Sin configuración previa, el mouse visual y el halo del cursor están activados. Puedes apagarlos de forma independiente; tu preferencia queda guardada.
 
 El **autoocultado solo actúa cuando el mostrador está bloqueado** y esa opción está activada. Tras unos segundos sin actividad se oculta y vuelve a aparecer al pulsar una tecla o usar los botones o la rueda del mouse. Mientras está desbloqueado permanece visible para facilitar su colocación. El halo del cursor funciona independientemente del autoocultado.
+
+## Leer el historial
+
+El teclado grande sigue usando **amarillo y rojo** para mostrar las pulsaciones. La franja **HISTORIAL** usa teclas más pequeñas de color **turquesa y violeta**, para distinguir las acciones anteriores del teclado en vivo.
+
+- Cada atajo mantiene sus teclas juntas, por ejemplo `[Ctrl] + [C]`.
+- Las acciones se leen de **izquierda a derecha, de la más antigua a la más reciente**, separadas por `›`.
+- Se conservan hasta cuatro acciones. Si no caben todas, se muestran las más recientes y `…` indica que hay acciones anteriores fuera de la franja.
+- `⇒` muestra el carácter producido y `×N` indica repeticiones consecutivas.
+- Los avisos de tamaño, posición o modo se muestran aparte y no ocupan lugares del historial.
+- En el modo **solo texto**, las mini teclas del historial se presentan en filas, sin el teclado grande.
 
 ## Cambiar el tamaño con el mouse
 
