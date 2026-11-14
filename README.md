@@ -25,6 +25,16 @@ Sin configuración previa, el mouse visual y el halo del cursor están activados
 
 El **autoocultado solo actúa cuando el mostrador está bloqueado** y esa opción está activada. Tras unos segundos sin actividad se oculta y vuelve a aparecer al pulsar una tecla o usar los botones o la rueda del mouse. Mientras está desbloqueado permanece visible para facilitar su colocación. El halo del cursor funciona independientemente del autoocultado.
 
+## Minimizar y expandir
+
+Pulsa el botón **− de la esquina superior derecha** para ocultar el teclado, el mouse visual y el historial. Quedará únicamente un pequeño icono flotante **⌨**: haz clic en él para expandir de nuevo el mostrador.
+
+- También puedes usar **Ctrl + Alt + N** o **Minimizar / expandir** en el menú de la bandeja.
+- El botón funciona aunque la posición del teclado esté bloqueada.
+- El resplandor del cursor mantiene su estado: puedes dejar solo el halo y el icono en pantalla, o apagar el halo con **Ctrl + Alt + M**.
+- Pulsar teclas, hacer clic o usar la rueda **no expande automáticamente** el mostrador. El historial sigue conservando únicamente las teclas recientes.
+- Al expandir se mantienen el tamaño, la posición y las opciones elegidas. El modo minimizado dura hasta que lo expandas o cierres el programa; al volver a iniciar se abre expandido.
+
 ## Leer el historial
 
 Usa **Ctrl + Alt + I** o la opción de la bandeja para **mostrar u ocultar** el historial. La preferencia queda guardada. Al ocultarlo desaparece la franja y el teclado aprovecha ese espacio; la línea de la combinación actual sigue disponible.
@@ -63,6 +73,7 @@ Usa **Ctrl y Alt del lado izquierdo**, para evitar conflictos con Alt Gr.
 | `Ctrl + Alt + H` | Alternar entre siempre visible y autoocultado |
 | `Ctrl + Alt + D` | Cambiar entre Latinoamérica y España |
 | `Ctrl + Alt + R` | Volver a la esquina inferior derecha |
+| `Ctrl + Alt + N` | Minimizar / expandir el mostrador |
 | `Ctrl + Alt + I` | Mostrar / ocultar el historial |
 | `Ctrl + Alt + B` | Mostrar / ocultar el mouse visual |
 | `Ctrl + Alt + M` | Activar / desactivar el resplandor del cursor |

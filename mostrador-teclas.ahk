@@ -23,6 +23,7 @@
 ;    Ctrl+Alt+H       -> Siempre visible / ocultarse solo
 ;    Ctrl+Alt+D       -> Distribucion Latinoamerica / España
 ;    Ctrl+Alt+R       -> Volver a la esquina inferior derecha
+;    Ctrl+Alt+N       -> Minimizar / expandir el mostrador
 ;    Ctrl+Alt+I       -> Mostrar / ocultar historial (hasta 4 teclas)
 ;    Ctrl+Alt+B       -> Mostrar / ocultar mouse visual
 ;    Ctrl+Alt+M       -> Activar / desactivar resplandor del mouse
@@ -74,8 +75,11 @@ global Teclas := Map(), Leyendas := Map(), Especiales := Map(), Posiciones := []
 global overlay := 0, txtCombo := 0, txtPrev := 0, U := 40, GuiW := 0, GuiH := 0
 global ih := 0, Recursos := [], Fuentes := Map()
 global Redimension := 0, HwndTeclado := 0
+global Minimizado := false, ControlMinimizar := 0, BotonMinimizar := 0
+global IconoMinX := 0, IconoMinY := 0
 
 try {
+    OnMessage(0x0047, SeguirPosicionMostrador) ; WM_WINDOWPOSCHANGED
     OnMessage(0x0024, LimitesRedimension) ; WM_GETMINMAXINFO
     OnMessage(0x0083, AreaCompletaTeclado)  ; WM_NCCALCSIZE: borde sin marco visible
     OnMessage(0x0084, DetectarBordeTeclado) ; WM_NCHITTEST
@@ -89,6 +93,7 @@ try {
     CargarNombres()
     Construir()
     ConfigurarBandeja()
+    CrearControlMinimizar()
     OnExit(LiberarHaloMouse)
     CrearHaloMouse()
     AplicarResplandorMouse()
@@ -124,6 +129,7 @@ try {
 <^<!h::AlternarAutoOcultar()
 <^<!d::AlternarDistribucion()
 <^<!r::RestablecerPosicion()
+<^<!n::AlternarMinimizado()
 <^<!i::AlternarHistorial()
 <^<!b::AlternarMouseVisual()
 <^<!m::AlternarResplandorMouse()
@@ -298,7 +304,7 @@ Construir() {
             GuiW := Round(14 * U) + 2 * pad
             GuiH := Round(U * 0.8) + 2 * overlay.MarginY
             overlay.SetFont("s" Pt(U * 0.45) " c" Col.barra " bold", "Segoe UI")
-            txtCombo := overlay.AddText(Format("x{} y{} w{} h{} +0x200 +0x80", pad, overlay.MarginY, Round(14 * U), Round(U * 0.8)))
+            txtCombo := overlay.AddText(Format("x{} y{} w{} h{} +0x200 +0x80", pad, overlay.MarginY, Round(14 * U) - TamBotonMinimizar() - Round(U * 0.15), Round(U * 0.8)))
             txtPrev := 0
             WinSetTransparent(245, overlay)
             return
@@ -326,7 +332,7 @@ Construir() {
 
     ; El estado actual es grande; el historial usa mini teclas de otra paleta.
     overlay.SetFont("s" Pt(U * 0.45) " c" Col.barra " bold", "Segoe UI")
-    txtCombo := overlay.AddText(Format("x{} y{} w{} h{} +0x200 +0x80 +0x4000", pad, pad, HistorialW, barH), "")
+    txtCombo := overlay.AddText(Format("x{} y{} w{} h{} +0x200 +0x80 +0x4000", pad, pad, HistorialW - TamBotonMinimizar() - Round(U * 0.15), barH), "")
     txtPrev := 0
     if MostrarHistorial
         HistorialPic := overlay.AddText(Format("x{} y{} w{} h{} +0xE", pad, historialY, HistorialW, HistorialH))
@@ -386,7 +392,9 @@ Leg(x, y, w, h, texto, px, negrita, rol, align) {
 }
 
 PintarTecla(sc, estado) {
-    global Teclas, Presionadas
+    global Teclas, Presionadas, Minimizado
+    if Minimizado
+        return
     if !Teclas.Has(sc)
         return
     k := Teclas[sc]
@@ -399,7 +407,11 @@ PintarTecla(sc, estado) {
 
 ; Misma idea que translateY(6px) y transition: 0.1s de la referencia.
 AnimarTeclas() {
-    global Teclas
+    global Teclas, Minimizado
+    if Minimizado {
+        SetTimer(AnimarTeclas, 0)
+        return
+    }
     pendiente := false
     ahora := A_TickCount
     for sc, k in Teclas
@@ -679,7 +691,9 @@ QuitarUltimo(texto) {
 
 Refrescar() {
     global Historial, MostrarTeclado, txtCombo, AvisoActual, MostrarHistorial
-    global HistorialPic, HistorialBitmap, HistorialW, HistorialH, Redimension
+    global HistorialPic, HistorialBitmap, HistorialW, HistorialH, Redimension, Minimizado
+    if Minimizado
+        return
     if IsObject(Redimension)
         return
     if (MostrarTeclado || !MostrarHistorial) {
@@ -700,13 +714,16 @@ Refrescar() {
 }
 
 Mostrar() {
-    global overlay, Visible, GuiW, GuiH, MostrarTeclado
+    global overlay, Visible, GuiW, GuiH, MostrarTeclado, Minimizado
+    if Minimizado
+        return
     if (Visible && MostrarTeclado)
         return
     pos := CalcularPosicion(GuiW, GuiH)
     overlay.Show(Format("x{} y{} w{} h{} NoActivate", pos[1], pos[2], GuiW, GuiH))
     overlay.Opt("+AlwaysOnTop")
     Visible := true
+    ActualizarControlMinimizar()
 }
 
 Ocultar() {
@@ -714,6 +731,7 @@ Ocultar() {
     overlay.Hide()
     Visible := false
     Historial := []
+    ActualizarControlMinimizar()
 }
 
 ; Cada 100 ms: limpia teclas "pegadas", apaga las que ya se soltaron
@@ -898,6 +916,8 @@ GuardarConfig() {
 ConfigurarBandeja() {
     global MostrarMouse, MostrarHistorial
     A_TrayMenu.Delete()
+    A_TrayMenu.Add("Minimizar / expandir  (Ctrl+Alt+N)", (*) => AlternarMinimizado())
+    A_TrayMenu.Add()
     A_TrayMenu.Add("Bloquear / desbloquear posición  (Ctrl+Alt+L)", (*) => AlternarBloqueo())
     A_TrayMenu.Add("Más grande  (Ctrl+Alt+RePág)", (*) => CambiarEscala(0.1))
     A_TrayMenu.Add("Más pequeño  (Ctrl+Alt+AvPág)", (*) => CambiarEscala(-0.1))
@@ -993,7 +1013,9 @@ AlternarResplandorMouse() {
 }
 
 LiberarHaloMouse(*) {
-    global HaloMouse, HaloDC, HaloBitmap, HaloAnterior
+    global HaloMouse, HaloDC, HaloBitmap, HaloAnterior, ControlMinimizar
+    if IsObject(ControlMinimizar)
+        ControlMinimizar.Destroy()
     SetTimer(ActualizarHaloMouse, 0)
     if IsObject(HaloMouse)
         HaloMouse.Destroy()
@@ -1020,7 +1042,9 @@ ConstruirMouseVisual(x, y) {
 }
 
 RefrescarMouseVisual() {
-    global PartesMouse, EventosMouse, ResaltadoMs
+    global PartesMouse, EventosMouse, ResaltadoMs, Minimizado
+    if Minimizado
+        return
     if !PartesMouse.Has("dibujo")
         return
     estado := 0
@@ -1553,5 +1577,93 @@ LimitarHistorial() {
         for i, tecla in teclas
             texto .= (i = 1 ? "" : " + ") tecla
         Historial[1] := texto sufijo
+    }
+}
+
+
+; ============================================================
+; BOTON SUPERIOR DERECHO Y MODO MINIMIZADO CON ICONO FLOTANTE
+; ============================================================
+
+TamBotonMinimizar() {
+    global U
+    return Max(18, Round(U * 0.65))
+}
+
+CrearControlMinimizar() {
+    global ControlMinimizar, BotonMinimizar
+    ; Una ventana independiente permite pulsarlo incluso con el teclado bloqueado.
+    ControlMinimizar := Gui("+AlwaysOnTop -Caption +ToolWindow -DPIScale +E0x08000000", "Minimizar mostrador")
+    ControlMinimizar.MarginX := 0, ControlMinimizar.MarginY := 0
+    ControlMinimizar.BackColor := "243247"
+    ControlMinimizar.SetFont("s" Pt(17) " cDBEAFE", "Segoe UI Symbol")
+    BotonMinimizar := ControlMinimizar.AddText("x0 y0 w26 h26 Center +0x200 +0x100", "−")
+    BotonMinimizar.OnEvent("Click", (*) => AlternarMinimizado())
+    ControlMinimizar.OnEvent("Close", (*) => AlternarMinimizado())
+}
+
+SeguirPosicionMostrador(wParam, lParam, msg, hwnd) {
+    global HwndTeclado, Minimizado
+    if (hwnd = HwndTeclado && !Minimizado)
+        ActualizarControlMinimizar()
+}
+
+ActualizarControlMinimizar() {
+    global ControlMinimizar, BotonMinimizar, Minimizado, Visible, overlay, U
+    global IconoMinX, IconoMinY, MostrarTeclado, MostrarHistorial
+    if !IsObject(ControlMinimizar)
+        return
+    if (!Minimizado && !Visible) {
+        ControlMinimizar.Hide()
+        return
+    }
+    if Minimizado {
+        tam := Max(30, Round(38 * A_ScreenDPI / 96))
+        x := IconoMinX, y := IconoMinY
+        BotonMinimizar.Text := "⌨"
+        ControlMinimizar.Title := "Expandir teclado (Ctrl+Alt+N)"
+    } else {
+        overlay.GetPos(&ox, &oy, &ow, &oh)
+        tam := TamBotonMinimizar()
+        pad := Round(U * 0.3)
+        margenY := MostrarTeclado ? pad : Round(pad * 0.6)
+        x := ox + ow - pad - tam, y := oy + margenY
+        BotonMinimizar.Text := "−"
+        ControlMinimizar.Title := "Minimizar teclado (Ctrl+Alt+N)"
+    }
+    ; Mantener el control accesible si el mostrador rebasa una pantalla.
+    monitor := DllCall("MonitorFromWindow", "ptr", overlay.Hwnd, "uint", 2, "ptr")
+    info := Buffer(40, 0)
+    NumPut("uint", 40, info)
+    if DllCall("GetMonitorInfoW", "ptr", monitor, "ptr", info) {
+        x := Max(NumGet(info, 20, "int"), Min(x, NumGet(info, 28, "int") - tam))
+        y := Max(NumGet(info, 24, "int"), Min(y, NumGet(info, 32, "int") - tam))
+    }
+    IconoMinX := x, IconoMinY := y
+    BotonMinimizar.Move(0, 0, tam, tam)
+    BotonMinimizar.SetFont("s" Pt(tam * 0.65) " cDBEAFE", "Segoe UI Symbol")
+    ControlMinimizar.Show(Format("x{} y{} w{} h{} NoActivate", x, y, tam, tam))
+    ControlMinimizar.Opt("+AlwaysOnTop")
+}
+
+AlternarMinimizado() {
+    global Minimizado, Redimension, overlay, Visible, Presionadas, Soltadas, Teclas, ControlMinimizar
+    if IsObject(Redimension)
+        return
+    Minimizado := !Minimizado
+    if Minimizado {
+        overlay.Hide()
+        Visible := false
+        SetTimer(AnimarTeclas, 0)
+        A_TrayMenu.Check("Minimizar / expandir  (Ctrl+Alt+N)")
+        ActualizarControlMinimizar()
+    } else {
+        ControlMinimizar.Hide()
+        A_TrayMenu.Uncheck("Minimizar / expandir  (Ctrl+Alt+N)")
+        ; Recuperar los estados reales, incluso si se cambiaron opciones minimizado.
+        for sc in Teclas
+            PintarTecla(sc, (Presionadas.Has(sc) || Soltadas.Has(sc)) ? (EsModificador(sc) ? "mod" : "normal") : "")
+        RefrescarMouseVisual()
+        AgregarAlHistorial("Mostrador expandido")
     }
 }
