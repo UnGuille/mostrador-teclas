@@ -1,4 +1,4 @@
-; ============================================================
+﻿; ============================================================
 ;  Mostrador de Teclas - TECLADO VISUAL para clases (v4)
 ; ============================================================
 ;  Dibuja un teclado en pantalla e ILUMINA las teclas que pulsas:
@@ -23,6 +23,8 @@
 ;    Ctrl+Alt+H       -> Siempre visible / ocultarse solo
 ;    Ctrl+Alt+D       -> Distribucion Latinoamerica / España
 ;    Ctrl+Alt+R       -> Volver a la esquina inferior derecha
+;    Ctrl+Alt+B       -> Mostrar / ocultar mouse visual
+;    Ctrl+Alt+M       -> Activar / desactivar resplandor del mouse
 ;    Ctrl+Alt+Q       -> Cerrar
 ;  Tambien hay un menu en el icono de la bandeja del sistema.
 ; ============================================================
@@ -55,8 +57,14 @@ global Col := {
     barra: "00FF90", previo: "8A8A8A"
 }
 
+global ResplandorMouse := Integer(IniRead(ArchivoConfig, "Mouse", "Resplandor", "1"))
+global MostrarMouse := Integer(IniRead(ArchivoConfig, "Mouse", "MostrarVisual", "1"))
+global PartesMouse := Map(), EventosMouse := Map()
+global HaloMouse := 0, HaloDC := 0, HaloBitmap := 0, HaloAnterior := 0
+global HaloTam := 88, HaloX := "", HaloY := ""
+
 ; ---------------- ESTADO ----------------
-global Bloqueado := true, Visible := false
+global Bloqueado := false, Visible := false
 global Historial := [], UltimaTick := 0
 global Presionadas := Map(), Soltadas := Map()
 global Teclas := Map(), Leyendas := Map(), Especiales := Map(), Posiciones := []
@@ -68,6 +76,9 @@ try {
     CargarNombres()
     Construir()
     ConfigurarBandeja()
+    OnExit(LiberarHaloMouse)
+    CrearHaloMouse()
+    AplicarResplandorMouse()
 
     OnMessage(0x0201, AlPresionarMouse)    ; WM_LBUTTONDOWN -> arrastrar
     OnMessage(0x0232, AlTerminarArrastre)  ; WM_EXITSIZEMOVE -> guardar posicion
@@ -85,7 +96,7 @@ try {
         Hotkey("~*" boton, ManejarMouse)
 
     SetTimer(Tick, 100)
-    AgregarAlHistorial("Listo (v4.1): presiona cualquier tecla")
+    AgregarAlHistorial("Listo: presiona cualquier tecla")
 } catch as err {
     MsgBox("ERROR AL INICIAR:`n`n" err.Message "`n`nLínea: " err.Line, "Mostrador de teclas - error", "Icon!")
     ExitApp()
@@ -100,6 +111,8 @@ try {
 <^<!h::AlternarAutoOcultar()
 <^<!d::AlternarDistribucion()
 <^<!r::RestablecerPosicion()
+<^<!b::AlternarMouseVisual()
+<^<!m::AlternarResplandorMouse()
 <^<!q::ExitApp()
 
 Pt(px) => Max(6, Round(px * 72 / A_ScreenDPI))
@@ -236,12 +249,13 @@ CargarNombres() {
 
 Construir() {
     global overlay, txtCombo, txtPrev, Teclas, U, GuiW, GuiH, Visible
-    global Escala, Bloqueado, MostrarTeclado, Col, Posiciones, Leyendas, Especiales
+    global Escala, Bloqueado, MostrarTeclado, Col, Posiciones, Leyendas, Especiales, MostrarMouse, PartesMouse
 
     if IsObject(overlay)
         overlay.Destroy()
     LiberarRecursos()          ; borrar imagenes/fuentes de la version anterior
     Teclas := Map()
+    PartesMouse := Map()
     Visible := false
 
     U := Round(40 * Escala * A_ScreenDPI / 96)   ; tamaño de una tecla en pixeles
@@ -268,7 +282,7 @@ Construir() {
     overlay.MarginY := 0
     anchoTec := Round(18.5 * U)
     barH := U
-    GuiW := anchoTec + 2 * pad
+    GuiW := anchoTec + 2 * pad + (MostrarMouse ? Round(3.5 * U) : 0)
     top := pad + barH + Round(U * 0.2)
     GuiH := top + Round(6.25 * U) + pad
 
@@ -318,6 +332,9 @@ Construir() {
         Teclas[pos.sc] := {pic: pic, bmps: bmps, estado: ""}
     }
 
+    if MostrarMouse
+        ConstruirMouseVisual(pad + anchoTec + Round(U * 0.4), top + Round(U * 0.5))
+
     WinSetTransparent(245, overlay)
 }
 
@@ -353,7 +370,7 @@ DibujarTecla(w, h, estado, legs) {
     DllCall("DeleteObject", "ptr", br)
 
     ; Tecla con esquinas redondeadas
-    colorTecla := (estado = "mod") ? Col.mod : (estado = "normal") ? Col.normal : Col.tecla
+    colorTecla := (estado = "mouse") ? "454545" : (estado = "mod") ? Col.mod : (estado = "normal") ? Col.normal : Col.tecla
     br := DllCall("CreateSolidBrush", "uint", BGR(colorTecla), "ptr")
     oldBr  := DllCall("SelectObject", "ptr", hdc, "ptr", br, "ptr")
     oldPen := DllCall("SelectObject", "ptr", hdc, "ptr", DllCall("GetStockObject", "int", 8, "ptr"), "ptr") ; NULL_PEN
@@ -371,7 +388,7 @@ DibujarTecla(w, h, estado, legs) {
         if !oldF
             oldF := prev
         rol := lg.rol
-        colorTxt := (estado = "") ? Col.%rol% : (estado = "mod") ? Col.modTxt : Col.normalTxt
+        colorTxt := (estado = "" || estado = "mouse") ? Col.%rol% : (estado = "mod") ? Col.modTxt : Col.normalTxt
         DllCall("SetTextColor", "ptr", hdc, "uint", BGR(colorTxt))
         NumPut("int", lg.x, "int", lg.y, "int", lg.x + lg.w, "int", lg.y + lg.h, rc)
         ; SINGLELINE | VCENTER | NOPREFIX + alineacion
@@ -450,6 +467,10 @@ TeclaArriba(ih, vk, sc) {
 }
 
 ManejarMouse(HotkeyName) {
+    global EventosMouse
+    boton := SubStr(HotkeyName, 3)
+    EventosMouse[boton] := A_TickCount
+    RefrescarMouseVisual()
     txt := ""
     for m in ModsActivos()
         txt .= m " + "
@@ -603,6 +624,7 @@ Ocultar() {
 ; y oculta la ventana si no hay actividad.
 Tick() {
     global Presionadas, Soltadas, ResaltadoMs, AutoOcultar, Bloqueado, Visible, UltimaTick, DuracionMs
+    RefrescarMouseVisual()
     ahora := A_TickCount
 
     sueltas := []
@@ -733,7 +755,7 @@ CalcularPosicion(w, h) {
 }
 
 GuardarConfig() {
-    global ArchivoConfig, Distribucion, Escala, MostrarTeclado, AutoOcultar, DuracionMs, ResaltadoMs, Anclaje, MargenX, MargenY
+    global ArchivoConfig, Distribucion, Escala, MostrarTeclado, AutoOcultar, DuracionMs, ResaltadoMs, Anclaje, MargenX, MargenY, ResplandorMouse, MostrarMouse
     IniWrite(Distribucion,   ArchivoConfig, "Teclado", "Distribucion")
     IniWrite(Escala,         ArchivoConfig, "Teclado", "Escala")
     IniWrite(MostrarTeclado, ArchivoConfig, "Teclado", "MostrarTeclado")
@@ -743,9 +765,12 @@ GuardarConfig() {
     IniWrite(Anclaje,        ArchivoConfig, "Teclado", "Anclaje")
     IniWrite(MargenX,        ArchivoConfig, "Teclado", "MargenX")
     IniWrite(MargenY,        ArchivoConfig, "Teclado", "MargenY")
+    IniWrite(ResplandorMouse, ArchivoConfig, "Mouse", "Resplandor")
+    IniWrite(MostrarMouse, ArchivoConfig, "Mouse", "MostrarVisual")
 }
 
 ConfigurarBandeja() {
+    global MostrarMouse
     A_TrayMenu.Delete()
     A_TrayMenu.Add("Bloquear / desbloquear posición  (Ctrl+Alt+L)", (*) => AlternarBloqueo())
     A_TrayMenu.Add("Más grande  (Ctrl+Alt+RePág)", (*) => CambiarEscala(0.1))
@@ -755,6 +780,236 @@ ConfigurarBandeja() {
     A_TrayMenu.Add("Latinoamérica / España  (Ctrl+Alt+D)", (*) => AlternarDistribucion())
     A_TrayMenu.Add("Volver a la esquina  (Ctrl+Alt+R)", (*) => RestablecerPosicion())
     A_TrayMenu.Add()
+    A_TrayMenu.Add("Mostrar / ocultar mouse visual  (Ctrl+Alt+B)", (*) => AlternarMouseVisual())
+    if MostrarMouse
+        A_TrayMenu.Check("Mostrar / ocultar mouse visual  (Ctrl+Alt+B)")
+    A_TrayMenu.Add("Resplandor del mouse  (Ctrl+Alt+M)", (*) => AlternarResplandorMouse())
+    A_TrayMenu.Add()
     A_TrayMenu.Add("Salir  (Ctrl+Alt+Q)", (*) => ExitApp())
-    A_IconTip := "Mostrador de teclas v4.1"
+    A_IconTip := "Mostrador de teclas"
+}
+
+
+; Halo amarillo suave, independiente del autoocultado del teclado.
+; Ventana por pixel: no roba el foco y todos los clics la atraviesan.
+CrearHaloMouse() {
+    global HaloMouse, HaloDC, HaloBitmap, HaloAnterior, HaloTam
+    HaloMouse := Gui("+AlwaysOnTop -Caption +ToolWindow -DPIScale +E0x80020 +E0x08000000")
+    bi := Buffer(40, 0)
+    NumPut("uint", 40, "int", HaloTam, "int", -HaloTam, "ushort", 1, "ushort", 32, bi)
+    bits := 0
+    HaloDC := DllCall("CreateCompatibleDC", "ptr", 0, "ptr")
+    HaloBitmap := DllCall("CreateDIBSection", "ptr", HaloDC, "ptr", bi,
+        "uint", 0, "ptr*", &bits, "ptr", 0, "uint", 0, "ptr")
+    if (!HaloDC || !HaloBitmap)
+        throw Error("No se pudo crear el resplandor del mouse.")
+    HaloAnterior := DllCall("SelectObject", "ptr", HaloDC, "ptr", HaloBitmap, "ptr")
+    radio := HaloTam / 2
+    Loop HaloTam {
+        y := A_Index - 1
+        Loop HaloTam {
+            x := A_Index - 1
+            distancia := Sqrt((x - radio + 0.5)**2 + (y - radio + 0.5)**2)
+            ; Amarillo con alpha premultiplicado y borde difuminado.
+            alpha := Round(90 * Max(0, 1 - (distancia / radio)**2)**1.4)
+            pixel := (alpha << 24) | (alpha << 16) | (Round(alpha * 0.84) << 8)
+            NumPut("uint", pixel, bits + 4 * (y * HaloTam + x))
+        }
+    }
+}
+
+ActualizarHaloMouse() {
+    global HaloMouse, HaloDC, HaloTam, HaloX, HaloY
+    punto := Buffer(8, 0)
+    if !DllCall("GetCursorPos", "ptr", punto)
+        return
+    x := NumGet(punto, 0, "int") - HaloTam // 2
+    y := NumGet(punto, 4, "int") - HaloTam // 2
+    if (x = HaloX && y = HaloY)
+        return
+    destino := Buffer(8, 0), tam := Buffer(8, 0), origen := Buffer(8, 0)
+    mezcla := Buffer(4, 0)
+    NumPut("int", x, "int", y, destino)
+    NumPut("int", HaloTam, "int", HaloTam, tam)
+    NumPut("uchar", 255, mezcla, 2)
+    NumPut("uchar", 1, mezcla, 3) ; AC_SRC_ALPHA
+    if DllCall("UpdateLayeredWindow", "ptr", HaloMouse.Hwnd, "ptr", 0,
+        "ptr", destino, "ptr", tam, "ptr", HaloDC, "ptr", origen,
+        "uint", 0, "ptr", mezcla, "uint", 2) {
+        HaloX := x, HaloY := y
+    }
+}
+
+AplicarResplandorMouse() {
+    global ResplandorMouse, HaloMouse, HaloX, HaloY
+    SetTimer(ActualizarHaloMouse, 0)
+    if ResplandorMouse {
+        HaloX := "", HaloY := ""
+        ActualizarHaloMouse()
+        DllCall("ShowWindow", "ptr", HaloMouse.Hwnd, "int", 8) ; sin activar
+        SetTimer(ActualizarHaloMouse, 16)
+        A_TrayMenu.Check("Resplandor del mouse  (Ctrl+Alt+M)")
+    } else {
+        HaloMouse.Hide()
+        A_TrayMenu.Uncheck("Resplandor del mouse  (Ctrl+Alt+M)")
+    }
+}
+
+AlternarResplandorMouse() {
+    global ResplandorMouse
+    ResplandorMouse := !ResplandorMouse
+    AplicarResplandorMouse()
+    GuardarConfig()
+    AgregarAlHistorial(ResplandorMouse ? "Resplandor del mouse activado" : "Resplandor del mouse desactivado")
+}
+
+LiberarHaloMouse(*) {
+    global HaloMouse, HaloDC, HaloBitmap, HaloAnterior
+    SetTimer(ActualizarHaloMouse, 0)
+    if IsObject(HaloMouse)
+        HaloMouse.Destroy()
+    if (HaloDC && HaloAnterior)
+        DllCall("SelectObject", "ptr", HaloDC, "ptr", HaloAnterior)
+    if HaloBitmap
+        DllCall("DeleteObject", "ptr", HaloBitmap)
+    if HaloDC
+        DllCall("DeleteDC", "ptr", HaloDC)
+}
+
+
+; Mouse visual integrado en la misma ventana: se mueve con el teclado.
+ConstruirMouseVisual(x, y) {
+    global overlay, U, PartesMouse
+    w := Round(U * 2.8), h := Round(U * 4.8)
+    pic := overlay.AddText(Format("x{} y{} w{} h{} +0xE", x, y, w, h))
+    bmps := Map()
+    ; Una imagen completa por combinacion: permite clics simultaneos.
+    Loop 32
+        bmps[A_Index - 1] := DibujarMouse(w, h, A_Index - 1)
+    SendMessage(0x172, 0, bmps[0], pic)
+    PartesMouse["dibujo"] := {pic: pic, bmps: bmps, estado: 0}
+}
+
+RefrescarMouseVisual() {
+    global PartesMouse, EventosMouse, ResaltadoMs
+    if !PartesMouse.Has("dibujo")
+        return
+    estado := 0
+    for i, boton in ["LButton", "RButton", "MButton", "WheelUp", "WheelDown"] {
+        activo := EventosMouse.Has(boton) && A_TickCount - EventosMouse[boton] < ResaltadoMs
+        if (i <= 3 && GetKeyState(boton, "P")) {
+            activo := true
+            EventosMouse[boton] := A_TickCount
+        }
+        if activo
+            estado |= 1 << (i - 1)
+    }
+    parte := PartesMouse["dibujo"]
+    if (parte.estado != estado) {
+        SendMessage(0x172, 0, parte.bmps[estado], parte.pic)
+        parte.estado := estado
+    }
+}
+
+; Silueta con curvas Bezier, dibujada a triple resolucion para suavizar bordes.
+DibujarMouse(w, h, estado) {
+    global Col, Recursos
+    ww := w * 3, hh := h * 3
+    dc := DllCall("CreateCompatibleDC", "ptr", 0, "ptr")
+    pantalla := DllCall("GetDC", "ptr", 0, "ptr")
+    grande := DllCall("CreateCompatibleBitmap", "ptr", pantalla, "int", ww, "int", hh, "ptr")
+    bmp := DllCall("CreateCompatibleBitmap", "ptr", pantalla, "int", w, "int", h, "ptr")
+    DllCall("ReleaseDC", "ptr", 0, "ptr", pantalla)
+    anterior := DllCall("SelectObject", "ptr", dc, "ptr", grande, "ptr")
+    sx := ww / 112, sy := hh / 192
+    rc := Buffer(16, 0)
+    NumPut("int", ww, rc, 8), NumPut("int", hh, rc, 12)
+    br := DllCall("CreateSolidBrush", "uint", BGR(Col.fondo), "ptr")
+    DllCall("FillRect", "ptr", dc, "ptr", rc, "ptr", br)
+    DllCall("DeleteObject", "ptr", br)
+    ; Sombra y carcasa con lados curvos y base redondeada.
+    forma := [56,7, 17,7,9,17,7,53, 3,91,2,140,13,164,
+        21,183,39,185,56,185, 78,185,94,181,101,162,
+        111,135,108,88,105,53, 102,17,94,7,56,7]
+    MouseCurva(dc, sx, sy, forma, "33383E", "080A0C", 2)
+    MouseCurva(dc, sx, sy, [56,11, 23,11,14,21,12,53,
+        10,66,9,79,9,89, 26,84,42,83,56,83,
+        56,60,56,34,56,11], (estado & 1) ? "FFD21F" : "E5E9ED", "161A20", 1.6)
+    MouseCurva(dc, sx, sy, [56,11, 89,11,98,21,100,53,
+        102,66,103,79,103,89, 86,84,70,83,56,83,
+        56,60,56,34,56,11], (estado & 2) ? "FFD21F" : "E5E9ED", "161A20", 1.6)
+    ; Panel de palma, con una curva que une ambos botones.
+    MouseCurva(dc, sx, sy, [9,94, 38,86,74,86,103,94,
+        105,119,104,145,97,162, 91,177,76,180,56,180,
+        36,180,21,177,15,162, 8,145,7,119,9,94], "B6BEC7", "161A20", 1.6)
+    ; Rueda central con surcos. Se ilumina al pulsar o desplazar.
+    rueda := (estado & 4) ? "FFD21F" : (estado & 24) ? "5AB0FF" : "555F6A"
+    MouseCurva(dc, sx, sy, [56,29, 48,29,47,34,47,40,
+        47,47,47,56,47,62, 47,70,50,73,56,73,
+        62,73,65,70,65,62, 65,56,65,47,65,40,
+        65,34,64,29,56,29], rueda, "101419", 2)
+    Loop 5 {
+        yy := 38 + A_Index * 5
+        MouseLinea(dc, sx, sy, 51, yy, 61, yy, "909AA4", 0.7)
+    }
+    ; Flechas discretas: azul indica el sentido de desplazamiento.
+    MouseLinea(dc, sx, sy, 52,24,56,20, (estado & 8) ? "5AB0FF" : "707983", 1.6)
+    MouseLinea(dc, sx, sy, 56,20,60,24, (estado & 8) ? "5AB0FF" : "707983", 1.6)
+    MouseLinea(dc, sx, sy, 52,77,56,81, (estado & 16) ? "5AB0FF" : "707983", 1.6)
+    MouseLinea(dc, sx, sy, 56,81,60,77, (estado & 16) ? "5AB0FF" : "707983", 1.6)
+    salida := DllCall("CreateCompatibleDC", "ptr", dc, "ptr")
+    previo := DllCall("SelectObject", "ptr", salida, "ptr", bmp, "ptr")
+    DllCall("SetStretchBltMode", "ptr", salida, "int", 4)
+    DllCall("SetBrushOrgEx", "ptr", salida, "int", 0, "int", 0, "ptr", 0)
+    DllCall("StretchBlt", "ptr", salida, "int", 0, "int", 0, "int", w, "int", h,
+        "ptr", dc, "int", 0, "int", 0, "int", ww, "int", hh, "uint", 0xCC0020)
+    DllCall("SelectObject", "ptr", salida, "ptr", previo)
+    DllCall("DeleteDC", "ptr", salida)
+    DllCall("SelectObject", "ptr", dc, "ptr", anterior)
+    DllCall("DeleteObject", "ptr", grande)
+    DllCall("DeleteDC", "ptr", dc)
+    Recursos.Push(bmp)
+    return bmp
+}
+
+MouseCurva(dc, sx, sy, puntos, relleno, borde, grosor) {
+    br := DllCall("CreateSolidBrush", "uint", BGR(relleno), "ptr")
+    pen := DllCall("CreatePen", "int", 0, "int", Max(1, Round(grosor*sx)), "uint", BGR(borde), "ptr")
+    oldBr := DllCall("SelectObject", "ptr", dc, "ptr", br, "ptr")
+    oldPen := DllCall("SelectObject", "ptr", dc, "ptr", pen, "ptr")
+    DllCall("BeginPath", "ptr", dc)
+    DllCall("MoveToEx", "ptr", dc, "int", Round(puntos[1]*sx), "int", Round(puntos[2]*sy), "ptr", 0)
+    cantidad := (puntos.Length - 2) // 2
+    coords := Buffer(cantidad * 8, 0)
+    Loop cantidad {
+        NumPut("int", Round(puntos[A_Index*2+1]*sx), "int", Round(puntos[A_Index*2+2]*sy), coords, (A_Index-1)*8)
+    }
+    DllCall("PolyBezierTo", "ptr", dc, "ptr", coords, "uint", cantidad)
+    DllCall("CloseFigure", "ptr", dc)
+    DllCall("EndPath", "ptr", dc)
+    DllCall("StrokeAndFillPath", "ptr", dc)
+    DllCall("SelectObject", "ptr", dc, "ptr", oldBr)
+    DllCall("SelectObject", "ptr", dc, "ptr", oldPen)
+    DllCall("DeleteObject", "ptr", br)
+    DllCall("DeleteObject", "ptr", pen)
+}
+
+MouseLinea(dc, sx, sy, x1, y1, x2, y2, color, grosor) {
+    pen := DllCall("CreatePen", "int", 0, "int", Max(1, Round(grosor*sx)), "uint", BGR(color), "ptr")
+    old := DllCall("SelectObject", "ptr", dc, "ptr", pen, "ptr")
+    DllCall("MoveToEx", "ptr", dc, "int", Round(x1*sx), "int", Round(y1*sy), "ptr", 0)
+    DllCall("LineTo", "ptr", dc, "int", Round(x2*sx), "int", Round(y2*sy))
+    DllCall("SelectObject", "ptr", dc, "ptr", old)
+    DllCall("DeleteObject", "ptr", pen)
+}
+
+AlternarMouseVisual() {
+    global MostrarMouse
+    MostrarMouse := !MostrarMouse
+    GuardarConfig()
+    if MostrarMouse
+        A_TrayMenu.Check("Mostrar / ocultar mouse visual  (Ctrl+Alt+B)")
+    else
+        A_TrayMenu.Uncheck("Mostrar / ocultar mouse visual  (Ctrl+Alt+B)")
+    Reconstruir(MostrarMouse ? "Mouse visual activado (modo teclado)" : "Mouse visual oculto")
 }
