@@ -12,7 +12,7 @@ Hecho con [AutoHotkey v2](https://www.autohotkey.com/) para Windows.
 - **Distribuciones Latinoamérica y España:** los símbolos escritos con **Alt Gr** aparecen en azul.
 - **Mouse visual opcional:** cuerpo curvo, botones integrados y rueda central. Los clics izquierdo, derecho y central se iluminan en amarillo; el desplazamiento de la rueda se indica en azul con flechas hacia arriba o abajo. Permite mostrar clics simultáneos.
 - **Resplandor del cursor:** halo amarillo suave que sigue el puntero, sin impedir los clics ni cambiar el foco de la ventana activa. Se controla por separado del mouse visual.
-- **Posición y tamaño ajustables:** arrastra el mostrador, cambia su tamaño o utiliza el modo de solo texto.
+- **Posición y tamaño ajustables:** arrastra el mostrador y cambia su tamaño desde sus bordes o esquinas, manteniendo las proporciones del teclado y del mouse visual. También puedes usar los atajos de tamaño o el modo de solo texto.
 
 ## Cómo usarlo
 
@@ -24,6 +24,17 @@ Hecho con [AutoHotkey v2](https://www.autohotkey.com/) para Windows.
 Sin configuración previa, el mouse visual y el halo del cursor están activados. Puedes apagarlos de forma independiente; tu preferencia queda guardada.
 
 El **autoocultado solo actúa cuando el mostrador está bloqueado** y esa opción está activada. Tras unos segundos sin actividad se oculta y vuelve a aparecer al pulsar una tecla o usar los botones o la rueda del mouse. Mientras está desbloqueado permanece visible para facilitar su colocación. El halo del cursor funciona independientemente del autoocultado.
+
+## Cambiar el tamaño con el mouse
+
+1. Desbloquea el mostrador con **Ctrl + Alt + L** si está bloqueado.
+2. Acerca el cursor a cualquier borde o esquina del teclado: aparecerá una flecha de redimensionar.
+3. Mantén pulsado el botón izquierdo y arrastra hacia fuera para agrandarlo o hacia dentro para reducirlo. Verás una vista previa proporcional mientras arrastras.
+4. Suelta el botón para aplicar el tamaño y guardar la posición. Pulsa **Esc** antes de soltarlo si quieres cancelar el cambio.
+
+El tamaño se limita al **60–250 %** y se conserva al volver a abrir el programa. El mouse visual cambia de tamaño junto con el teclado. Arrastrar desde el interior sigue sirviendo para mover el mostrador.
+
+El cambio de tamaño desde el perímetro está disponible en el **modo teclado desbloqueado**. En el modo de solo texto puedes seguir usando **Ctrl + Alt + RePág / AvPág**.
 
 ## Atajos
 

@@ -70,8 +70,18 @@ global Presionadas := Map(), Soltadas := Map()
 global Teclas := Map(), Leyendas := Map(), Especiales := Map(), Posiciones := []
 global overlay := 0, txtCombo := 0, txtPrev := 0, U := 40, GuiW := 0, GuiH := 0
 global ih := 0, Recursos := [], Fuentes := Map()
+global Redimension := 0, HwndTeclado := 0
 
 try {
+    OnMessage(0x0024, LimitesRedimension) ; WM_GETMINMAXINFO
+    OnMessage(0x0083, AreaCompletaTeclado)  ; WM_NCCALCSIZE: borde sin marco visible
+    OnMessage(0x0084, DetectarBordeTeclado) ; WM_NCHITTEST
+    OnMessage(0x0020, CursorBordeTeclado)   ; WM_SETCURSOR
+    OnMessage(0x00A1, ComenzarRedimension)  ; WM_NCLBUTTONDOWN
+    OnMessage(0x0214, AjustarRedimension)   ; WM_SIZING
+    OnMessage(0x000F, PintarVistaRedimension) ; WM_PAINT
+    OnMessage(0x0014, FondoVistaRedimension) ; WM_ERASEBKGND
+    OnMessage(0x0005, ActualizarVistaRedimension) ; WM_SIZE
     DefinirPosiciones()
     CargarNombres()
     Construir()
@@ -248,10 +258,11 @@ CargarNombres() {
 ; ============================================================
 
 Construir() {
-    global overlay, txtCombo, txtPrev, Teclas, U, GuiW, GuiH, Visible
+    global overlay, txtCombo, txtPrev, Teclas, U, GuiW, GuiH, Visible, HwndTeclado
     global Escala, Bloqueado, MostrarTeclado, Col, Posiciones, Leyendas, Especiales, MostrarMouse, PartesMouse
 
     SetTimer(AnimarTeclas, 0)
+    HwndTeclado := 0
     if IsObject(overlay)
         overlay.Destroy()
     LiberarRecursos()          ; borrar imagenes/fuentes de la version anterior
@@ -263,7 +274,11 @@ Construir() {
     pad := Round(U * 0.3)
 
     ; -DPIScale: pixeles reales.  +E0x20: los clics atraviesan la ventana (bloqueado)
-    overlay := Gui("+AlwaysOnTop -Caption +ToolWindow -DPIScale" (Bloqueado ? " +E0x20" : ""))
+    overlay := Gui("+AlwaysOnTop -Caption +Resize -MinimizeBox -MaximizeBox +ToolWindow -DPIScale" (Bloqueado ? " +E0x20" : ""))
+    HwndTeclado := overlay.Hwnd
+    ; Aplicar el area cliente completa una vez que el HWND ya esta disponible.
+    DllCall("SetWindowPos", "ptr", overlay.Hwnd, "ptr", 0, "int", 0, "int", 0,
+        "int", 0, "int", 0, "uint", 0x37) ; FRAMECHANGED | NOMOVE | NOSIZE | NOZORDER | NOACTIVATE
     overlay.BackColor := Col.fondo
     overlay.OnEvent("Close", (*) => ExitApp())
 
@@ -726,6 +741,9 @@ MedirTexto(ctrl, texto) {
 ; ============================================================
 
 AlternarBloqueo() {
+    global Redimension
+    if IsObject(Redimension)
+        return
     global Bloqueado, overlay
     Bloqueado := !Bloqueado
     overlay.Opt(Bloqueado ? "+E0x20" : "-E0x20")
@@ -733,13 +751,18 @@ AlternarBloqueo() {
 }
 
 CambiarEscala(d) {
-    global Escala
+    global Escala, Redimension
+    if IsObject(Redimension)
+        return
     Escala := Round(Max(0.6, Min(2.5, Escala + d)), 2)
     GuardarConfig()
     Reconstruir("Tamaño: " Round(Escala * 100) "%")
 }
 
 AlternarModo() {
+    global Redimension
+    if IsObject(Redimension)
+        return
     global MostrarTeclado
     MostrarTeclado := !MostrarTeclado
     GuardarConfig()
@@ -754,6 +777,9 @@ AlternarAutoOcultar() {
 }
 
 AlternarDistribucion() {
+    global Redimension
+    if IsObject(Redimension)
+        return
     global Distribucion
     Distribucion := (Distribucion = "es") ? "latam" : "es"
     GuardarConfig()
@@ -762,7 +788,9 @@ AlternarDistribucion() {
 }
 
 Reconstruir(mensaje) {
-    global Presionadas, Soltadas
+    global Presionadas, Soltadas, Redimension
+    if IsObject(Redimension)
+        return
     Construir()
     for sc in Presionadas
         PintarTecla(sc, EsModificador(sc) ? "mod" : "normal")
@@ -772,6 +800,9 @@ Reconstruir(mensaje) {
 }
 
 RestablecerPosicion() {
+    global Redimension
+    if IsObject(Redimension)
+        return
     global Anclaje, MargenX, MargenY, Visible, overlay
     Anclaje := "BR"
     MargenX := 20
@@ -787,15 +818,25 @@ AlPresionarMouse(wParam, lParam, msg, hwnd) {
     if (Bloqueado || !IsObject(overlay))
         return
     if (hwnd = overlay.Hwnd || DllCall("GetAncestor", "ptr", hwnd, "uint", 2, "ptr") = overlay.Hwnd) {
-        PostMessage(0xA1, 2, 0, , overlay.Hwnd)   ; arrastrar como barra de titulo
+        borde := BordeTeclado()
+        punto := Buffer(8, 0)
+        DllCall("GetCursorPos", "ptr", punto)
+        coords := (NumGet(punto, 0, "int") & 0xFFFF) | ((NumGet(punto, 4, "int") & 0xFFFF) << 16)
+        PostMessage(0xA1, borde ? borde : 2, coords, , overlay.Hwnd) ; redimensionar o mover
         return 0
     }
 }
 
 AlTerminarArrastre(wParam, lParam, msg, hwnd) {
-    global overlay, Anclaje, MargenX, MargenY
+    global overlay, Anclaje, MargenX, MargenY, Redimension
+
     if (!IsObject(overlay) || hwnd != overlay.Hwnd)
         return
+    if IsObject(Redimension) {
+        ; Reconstruir despues de salir del bucle nativo de Windows.
+        SetTimer(TerminarRedimension, -1)
+        return
+    }
     overlay.GetPos(&x, &y)
     Anclaje := "XY"
     MargenX := x
@@ -1065,6 +1106,9 @@ MouseLinea(dc, sx, sy, x1, y1, x2, y2, color, grosor) {
 }
 
 AlternarMouseVisual() {
+    global Redimension
+    if IsObject(Redimension)
+        return
     global MostrarMouse
     MostrarMouse := !MostrarMouse
     GuardarConfig()
@@ -1073,4 +1117,212 @@ AlternarMouseVisual() {
     else
         A_TrayMenu.Uncheck("Mostrar / ocultar mouse visual  (Ctrl+Alt+B)")
     Reconstruir(MostrarMouse ? "Mouse visual activado (modo teclado)" : "Mouse visual oculto")
+}
+
+
+; ============================================================
+; REDIMENSIONAR DESDE EL PERIMETRO (solo desbloqueado, modo teclado)
+; ============================================================
+
+AreaCompletaTeclado(wParam, lParam, msg, hwnd) {
+    global HwndTeclado
+    global overlay
+    if IsObject(overlay) && hwnd = HwndTeclado
+        return 0
+}
+
+BordeTeclado() {
+    global HwndTeclado
+    global overlay, Bloqueado, MostrarTeclado
+    if (Bloqueado || !MostrarTeclado || !IsObject(overlay))
+        return 0
+    punto := Buffer(8, 0), rc := Buffer(16, 0)
+    if !DllCall("GetCursorPos", "ptr", punto)
+        return 0
+    DllCall("GetWindowRect", "ptr", HwndTeclado, "ptr", rc)
+    x := NumGet(punto, 0, "int"), y := NumGet(punto, 4, "int")
+    l := NumGet(rc, 0, "int"), t := NumGet(rc, 4, "int")
+    r := NumGet(rc, 8, "int"), b := NumGet(rc, 12, "int")
+    if (x < l || x >= r || y < t || y >= b)
+        return 0
+    margen := Max(6, Round(8 * A_ScreenDPI / 96))
+    izq := x < l + margen, der := x >= r - margen
+    arriba := y < t + margen, abajo := y >= b - margen
+    if arriba
+        return izq ? 13 : der ? 14 : 12 ; HTTOPLEFT, HTTOPRIGHT, HTTOP
+    if abajo
+        return izq ? 16 : der ? 17 : 15 ; HTBOTTOMLEFT, HTBOTTOMRIGHT, HTBOTTOM
+    return izq ? 10 : der ? 11 : 0     ; HTLEFT, HTRIGHT
+}
+
+DetectarBordeTeclado(wParam, lParam, msg, hwnd) {
+    global HwndTeclado
+    global overlay
+    if !IsObject(overlay) || hwnd != HwndTeclado
+        return
+    borde := BordeTeclado()
+    if borde
+        return borde
+    return 1 ; HTCLIENT: sin redimensionar cuando esta bloqueado o en solo texto
+}
+
+CursorBordeTeclado(wParam, lParam, msg, hwnd) {
+    global HwndTeclado
+    global overlay
+    if !IsObject(overlay)
+        return
+    if (hwnd != HwndTeclado && DllCall("GetAncestor", "ptr", hwnd, "uint", 2, "ptr") != HwndTeclado)
+        return
+    borde := BordeTeclado()
+    if !borde
+        return
+    cursor := (borde = 10 || borde = 11) ? 32644 : (borde = 12 || borde = 15) ? 32645
+        : (borde = 13 || borde = 17) ? 32642 : 32643
+    DllCall("SetCursor", "ptr", DllCall("LoadCursorW", "ptr", 0, "ptr", cursor, "ptr"))
+    return 1
+}
+
+ComenzarRedimension(wParam, lParam, msg, hwnd) {
+    global HwndTeclado
+    global overlay, Bloqueado, MostrarTeclado, Redimension, Escala
+    if (!IsObject(overlay) || hwnd != HwndTeclado || Bloqueado || !MostrarTeclado
+        || wParam < 10 || wParam > 17 || IsObject(Redimension))
+        return
+    overlay.GetPos(&x, &y, &w, &h)
+    pantalla := DllCall("GetDC", "ptr", HwndTeclado, "ptr")
+    dc := DllCall("CreateCompatibleDC", "ptr", pantalla, "ptr")
+    bmp := DllCall("CreateCompatibleBitmap", "ptr", pantalla, "int", w, "int", h, "ptr")
+    DllCall("ReleaseDC", "ptr", HwndTeclado, "ptr", pantalla)
+    if (!dc || !bmp) {
+        if dc
+            DllCall("DeleteDC", "ptr", dc)
+        if bmp
+            DllCall("DeleteObject", "ptr", bmp)
+        return 0 ; no iniciar si no hay recursos para la vista previa
+    }
+    old := DllCall("SelectObject", "ptr", dc, "ptr", bmp, "ptr")
+    ; Captura el contenido propio, incluidos todos sus controles, sin el halo.
+    if !DllCall("PrintWindow", "ptr", HwndTeclado, "ptr", dc, "uint", 1) {
+        DllCall("SelectObject", "ptr", dc, "ptr", old)
+        DllCall("DeleteObject", "ptr", bmp)
+        DllCall("DeleteDC", "ptr", dc)
+        return 0
+    }
+    Redimension := {x: x, y: y, w: w, h: h, escala: Escala,
+        nueva: Escala, dc: dc, bmp: bmp, old: old}
+    SetTimer(AnimarTeclas, 0)
+    for ctrl in overlay
+        ctrl.Visible := false
+    DllCall("InvalidateRect", "ptr", HwndTeclado, "ptr", 0, "int", false)
+}
+
+DimensionesTeclado(escala) {
+    global HwndTeclado
+    global MostrarMouse
+    unidad := Round(40 * escala * A_ScreenDPI / 96)
+    pad := Round(unidad * 0.3)
+    w := Round(18.5 * unidad) + 2 * pad + (MostrarMouse ? Round(3.5 * unidad) : 0)
+    h := pad + unidad + Round(unidad * 0.2) + Round(6.25 * unidad) + pad
+    return [w, h]
+}
+
+AjustarRedimension(wParam, lParam, msg, hwnd) {
+    global HwndTeclado
+    global overlay, Redimension
+    if (!IsObject(Redimension) || !IsObject(overlay) || hwnd != HwndTeclado)
+        return
+    red := Redimension
+    l := NumGet(lParam, 0, "int"), t := NumGet(lParam, 4, "int")
+    r := NumGet(lParam, 8, "int"), b := NumGet(lParam, 12, "int")
+    factorX := (r - l) / red.w, factorY := (b - t) / red.h
+    if (wParam = 1 || wParam = 2)
+        factor := factorX
+    else if (wParam = 3 || wParam = 6)
+        factor := factorY
+    else
+        factor := Abs(factorX - 1) >= Abs(factorY - 1) ? factorX : factorY
+    red.nueva := Max(0.6, Min(2.5, red.escala * factor))
+    tam := DimensionesTeclado(red.nueva)
+    w := tam[1], h := tam[2]
+    ; Conservar la esquina opuesta; los bordes laterales escalan desde su centro.
+    if (wParam = 1 || wParam = 4 || wParam = 7)
+        l := r - w
+    else if (wParam = 2 || wParam = 5 || wParam = 8)
+        r := l + w
+    else {
+        l := Round(red.x + (red.w - w) / 2)
+        r := l + w
+    }
+    if (wParam = 3 || wParam = 4 || wParam = 5)
+        t := b - h
+    else if (wParam = 6 || wParam = 7 || wParam = 8)
+        b := t + h
+    else {
+        t := Round(red.y + (red.h - h) / 2)
+        b := t + h
+    }
+    NumPut("int", l, "int", t, "int", r, "int", b, lParam)
+    return 1
+}
+
+ActualizarVistaRedimension(wParam, lParam, msg, hwnd) {
+    global HwndTeclado
+    global overlay, Redimension
+    if IsObject(Redimension) && IsObject(overlay) && hwnd = HwndTeclado
+        DllCall("InvalidateRect", "ptr", hwnd, "ptr", 0, "int", false)
+}
+
+FondoVistaRedimension(wParam, lParam, msg, hwnd) {
+    global HwndTeclado
+    global overlay, Redimension
+    if IsObject(Redimension) && IsObject(overlay) && hwnd = HwndTeclado
+        return 1
+}
+
+PintarVistaRedimension(wParam, lParam, msg, hwnd) {
+    global HwndTeclado
+    global overlay, Redimension
+    if (!IsObject(Redimension) || !IsObject(overlay) || hwnd != HwndTeclado)
+        return
+    red := Redimension
+    ps := Buffer(A_PtrSize = 8 ? 72 : 64, 0), rc := Buffer(16, 0)
+    dc := DllCall("BeginPaint", "ptr", hwnd, "ptr", ps, "ptr")
+    DllCall("GetClientRect", "ptr", hwnd, "ptr", rc)
+    DllCall("SetStretchBltMode", "ptr", dc, "int", 4)
+    DllCall("SetBrushOrgEx", "ptr", dc, "int", 0, "int", 0, "ptr", 0)
+    DllCall("StretchBlt", "ptr", dc, "int", 0, "int", 0,
+        "int", NumGet(rc, 8, "int"), "int", NumGet(rc, 12, "int"),
+        "ptr", red.dc, "int", 0, "int", 0, "int", red.w, "int", red.h, "uint", 0xCC0020)
+    DllCall("EndPaint", "ptr", hwnd, "ptr", ps)
+    return 0
+}
+
+TerminarRedimension() {
+    global HwndTeclado
+    global overlay, Redimension, Escala, Anclaje, MargenX, MargenY
+    if !IsObject(Redimension)
+        return
+    Critical
+    red := Redimension
+    overlay.GetPos(&x, &y, &w, &h)
+    ; Escape en el bucle nativo restaura el rectangulo original.
+    Escala := (w = red.w && h = red.h) ? red.escala : red.nueva
+    Anclaje := "XY", MargenX := x, MargenY := y
+    Redimension := 0
+    DllCall("SelectObject", "ptr", red.dc, "ptr", red.old)
+    DllCall("DeleteObject", "ptr", red.bmp)
+    DllCall("DeleteDC", "ptr", red.dc)
+    Reconstruir("Tamaño: " Round(Escala * 100) "%")
+    GuardarConfig()
+}
+
+
+LimitesRedimension(wParam, lParam, msg, hwnd) {
+    global HwndTeclado, MostrarTeclado
+    if (hwnd != HwndTeclado || !MostrarTeclado)
+        return
+    minimo := DimensionesTeclado(0.6), maximo := DimensionesTeclado(2.5)
+    NumPut("int", minimo[1], "int", minimo[2], lParam, 24)
+    NumPut("int", maximo[1], "int", maximo[2], lParam, 32)
+    return 0
 }
