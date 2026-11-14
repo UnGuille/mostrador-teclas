@@ -23,6 +23,7 @@
 ;    Ctrl+Alt+H       -> Siempre visible / ocultarse solo
 ;    Ctrl+Alt+D       -> Distribucion Latinoamerica / España
 ;    Ctrl+Alt+R       -> Volver a la esquina inferior derecha
+;    Ctrl+Alt+I       -> Mostrar / ocultar historial (hasta 4 teclas)
 ;    Ctrl+Alt+B       -> Mostrar / ocultar mouse visual
 ;    Ctrl+Alt+M       -> Activar / desactivar resplandor del mouse
 ;    Ctrl+Alt+Q       -> Cerrar
@@ -65,6 +66,7 @@ global HaloTam := 88, HaloX := "", HaloY := ""
 
 ; ---------------- ESTADO ----------------
 global Bloqueado := false, Visible := false
+global MostrarHistorial := Integer(IniRead(ArchivoConfig, "Historial", "Mostrar", "1"))
 global Historial := [], UltimaTick := 0, AvisoActual := ""
 global HistorialPic := 0, HistorialBitmap := 0, HistorialW := 0, HistorialH := 0
 global Presionadas := Map(), Soltadas := Map()
@@ -122,6 +124,7 @@ try {
 <^<!h::AlternarAutoOcultar()
 <^<!d::AlternarDistribucion()
 <^<!r::RestablecerPosicion()
+<^<!i::AlternarHistorial()
 <^<!b::AlternarMouseVisual()
 <^<!m::AlternarResplandorMouse()
 <^<!q::ExitApp()
@@ -261,7 +264,7 @@ CargarNombres() {
 Construir() {
     global overlay, txtCombo, txtPrev, Teclas, U, GuiW, GuiH, Visible, HwndTeclado
     global Escala, Bloqueado, MostrarTeclado, Col, Posiciones, Leyendas, Especiales, MostrarMouse, PartesMouse
-    global HistorialPic, HistorialBitmap, HistorialW, HistorialH
+    global HistorialPic, HistorialBitmap, HistorialW, HistorialH, MostrarHistorial
 
     SetTimer(AnimarTeclas, 0)
     HwndTeclado := 0
@@ -291,6 +294,15 @@ Construir() {
     if !MostrarTeclado {
         overlay.MarginX := pad
         overlay.MarginY := Round(pad * 0.6)
+        if !MostrarHistorial {
+            GuiW := Round(14 * U) + 2 * pad
+            GuiH := Round(U * 0.8) + 2 * overlay.MarginY
+            overlay.SetFont("s" Pt(U * 0.45) " c" Col.barra " bold", "Segoe UI")
+            txtCombo := overlay.AddText(Format("x{} y{} w{} h{} +0x200 +0x80", pad, overlay.MarginY, Round(14 * U), Round(U * 0.8)))
+            txtPrev := 0
+            WinSetTransparent(245, overlay)
+            return
+        }
         HistorialW := Round(14 * U), HistorialH := Round(3.8 * U)
         GuiW := HistorialW + 2 * overlay.MarginX
         GuiH := HistorialH + 2 * overlay.MarginY
@@ -307,8 +319,8 @@ Construir() {
     barH := Round(0.75 * U)
     GuiW := anchoTec + 2 * pad + (MostrarMouse ? Round(3.5 * U) : 0)
     HistorialW := GuiW - 2 * pad
-    HistorialH := Round(1.25 * U)
-    historialY := pad + barH + Round(U * 0.15)
+    HistorialH := MostrarHistorial ? Round(1.25 * U) : 0
+    historialY := pad + barH + (MostrarHistorial ? Round(U * 0.15) : 0)
     top := historialY + HistorialH + Round(U * 0.2)
     GuiH := top + Round(6.25 * U) + pad
 
@@ -316,7 +328,8 @@ Construir() {
     overlay.SetFont("s" Pt(U * 0.45) " c" Col.barra " bold", "Segoe UI")
     txtCombo := overlay.AddText(Format("x{} y{} w{} h{} +0x200 +0x80 +0x4000", pad, pad, HistorialW, barH), "")
     txtPrev := 0
-    HistorialPic := overlay.AddText(Format("x{} y{} w{} h{} +0xE", pad, historialY, HistorialW, HistorialH))
+    if MostrarHistorial
+        HistorialPic := overlay.AddText(Format("x{} y{} w{} h{} +0xE", pad, historialY, HistorialW, HistorialH))
 
     ; Teclas
     g := Max(2, Round(U * 0.06))
@@ -639,7 +652,7 @@ AgregarAlHistorial(texto, esEntrada := false) {
     base := RegExReplace(ultima, " ×\d+$")
 
     if (n && base = texto) {
-        veces := RegExMatch(ultima, " ×(\d+)$", &m) ? m[1] + 1 : 2      ; "A ×3"
+        veces := RegExMatch(ultima, " ×(\d+)$", &m) ? Min(4, m[1] + 1) : 2      ; contador breve: como maximo ×4
         Historial[n] := texto " ×" veces
     } else if (n && ultima = base && InStr(texto, ultima " + ") = 1) {
         Historial[n] := texto                                           ; "Ctrl" -> "Ctrl + C"
@@ -648,6 +661,7 @@ AgregarAlHistorial(texto, esEntrada := false) {
         if (Historial.Length > 4)
             Historial.RemoveAt(1)
     }
+    LimitarHistorial()
     UltimaTick := A_TickCount
     Refrescar()
 }
@@ -664,13 +678,17 @@ QuitarUltimo(texto) {
 }
 
 Refrescar() {
-    global Historial, MostrarTeclado, txtCombo, AvisoActual
+    global Historial, MostrarTeclado, txtCombo, AvisoActual, MostrarHistorial
     global HistorialPic, HistorialBitmap, HistorialW, HistorialH, Redimension
     if IsObject(Redimension)
         return
-    if MostrarTeclado {
+    if (MostrarTeclado || !MostrarHistorial) {
         n := Historial.Length
         txtCombo.Text := AvisoActual != "" ? AvisoActual : n ? "AHORA  " Historial[n] : "AHORA  —"
+    }
+    if !MostrarHistorial {
+        Mostrar()
+        return
     }
     nuevo := DibujarHistorial(HistorialW, HistorialH, !MostrarTeclado)
     SendMessage(0x172, 0, nuevo, HistorialPic)
@@ -862,7 +880,7 @@ CalcularPosicion(w, h) {
 }
 
 GuardarConfig() {
-    global ArchivoConfig, Distribucion, Escala, MostrarTeclado, AutoOcultar, DuracionMs, ResaltadoMs, Anclaje, MargenX, MargenY, ResplandorMouse, MostrarMouse
+    global ArchivoConfig, Distribucion, Escala, MostrarTeclado, AutoOcultar, DuracionMs, ResaltadoMs, Anclaje, MargenX, MargenY, ResplandorMouse, MostrarMouse, MostrarHistorial
     IniWrite(Distribucion,   ArchivoConfig, "Teclado", "Distribucion")
     IniWrite(Escala,         ArchivoConfig, "Teclado", "Escala")
     IniWrite(MostrarTeclado, ArchivoConfig, "Teclado", "MostrarTeclado")
@@ -874,10 +892,11 @@ GuardarConfig() {
     IniWrite(MargenY,        ArchivoConfig, "Teclado", "MargenY")
     IniWrite(ResplandorMouse, ArchivoConfig, "Mouse", "Resplandor")
     IniWrite(MostrarMouse, ArchivoConfig, "Mouse", "MostrarVisual")
+    IniWrite(MostrarHistorial, ArchivoConfig, "Historial", "Mostrar")
 }
 
 ConfigurarBandeja() {
-    global MostrarMouse
+    global MostrarMouse, MostrarHistorial
     A_TrayMenu.Delete()
     A_TrayMenu.Add("Bloquear / desbloquear posición  (Ctrl+Alt+L)", (*) => AlternarBloqueo())
     A_TrayMenu.Add("Más grande  (Ctrl+Alt+RePág)", (*) => CambiarEscala(0.1))
@@ -887,6 +906,9 @@ ConfigurarBandeja() {
     A_TrayMenu.Add("Latinoamérica / España  (Ctrl+Alt+D)", (*) => AlternarDistribucion())
     A_TrayMenu.Add("Volver a la esquina  (Ctrl+Alt+R)", (*) => RestablecerPosicion())
     A_TrayMenu.Add()
+    A_TrayMenu.Add("Mostrar / ocultar historial  (Ctrl+Alt+I)", (*) => AlternarHistorial())
+    if MostrarHistorial
+        A_TrayMenu.Check("Mostrar / ocultar historial  (Ctrl+Alt+I)")
     A_TrayMenu.Add("Mostrar / ocultar mouse visual  (Ctrl+Alt+B)", (*) => AlternarMouseVisual())
     if MostrarMouse
         A_TrayMenu.Check("Mostrar / ocultar mouse visual  (Ctrl+Alt+B)")
@@ -1222,12 +1244,13 @@ ComenzarRedimension(wParam, lParam, msg, hwnd) {
 }
 
 DimensionesTeclado(escala) {
-    global HwndTeclado
+    global HwndTeclado, MostrarHistorial
     global MostrarMouse
     unidad := Round(40 * escala * A_ScreenDPI / 96)
     pad := Round(unidad * 0.3)
     w := Round(18.5 * unidad) + 2 * pad + (MostrarMouse ? Round(3.5 * unidad) : 0)
-    h := pad + Round(unidad * 0.75) + Round(unidad * 0.15) + Round(unidad * 1.25)
+    h := pad + Round(unidad * 0.75)
+        + (MostrarHistorial ? Round(unidad * 0.15) + Round(unidad * 1.25) : 0)
         + Round(unidad * 0.2) + Round(6.25 * unidad) + pad
     return [w, h]
 }
@@ -1431,7 +1454,7 @@ DibujarHistorial(w, h, vertical := false) {
     pad := Max(4, Round(U * 0.18))
     cab := Round(U * 0.42), alto := Round(U * 0.62)
     px := Max(9, Round(U * 0.27))
-    etiqueta := "HISTORIAL  ·  antiguo → reciente"
+    etiqueta := "RECIENTES  ·  hasta 4 teclas →"
     TextoHistorial(dc, etiqueta, pad, 1, w - 2 * pad, cab, Max(8, Round(U * 0.21)), "A8B6CC")
     n := Historial.Length
     if !n {
@@ -1479,4 +1502,56 @@ DibujarHistorial(w, h, vertical := false) {
     DllCall("SelectObject", "ptr", dc, "ptr", old)
     DllCall("DeleteDC", "ptr", dc)
     return bmp
+}
+
+
+AlternarHistorial() {
+    global MostrarHistorial, Redimension
+    if IsObject(Redimension)
+        return
+    MostrarHistorial := !MostrarHistorial
+    GuardarConfig()
+    if MostrarHistorial
+        A_TrayMenu.Check("Mostrar / ocultar historial  (Ctrl+Alt+I)")
+    else
+        A_TrayMenu.Uncheck("Mostrar / ocultar historial  (Ctrl+Alt+I)")
+    Reconstruir(MostrarHistorial ? "Historial visible: hasta 4 teclas recientes" : "Historial oculto")
+}
+
+ContarTeclasHistorial(texto) {
+    cantidad := 0
+    for parte in PartesEntradaHistorial(texto)
+        if (parte.tipo = "tecla" || parte.tipo = "mod")
+            cantidad++
+    return cantidad
+}
+
+LimitarHistorial() {
+    global Historial
+    total := 0
+    for entrada in Historial
+        total += ContarTeclasHistorial(entrada)
+    ; Retirar primero los atajos antiguos completos, sin partir sus teclas.
+    while (total > 4 && Historial.Length > 1) {
+        total -= ContarTeclasHistorial(Historial[1])
+        Historial.RemoveAt(1)
+    }
+    ; Un atajo excepcional con mas de cuatro teclas conserva las cuatro finales.
+    if (total > 4 && Historial.Length = 1) {
+        teclas := [], sufijo := ""
+        for parte in PartesEntradaHistorial(Historial[1]) {
+            if (parte.tipo = "tecla" || parte.tipo = "mod")
+                teclas.Push(parte.texto)
+            else if parte.tipo = "resultado"
+                sufijo .= "   " parte.texto
+            else if parte.tipo = "veces"
+                sufijo .= " " parte.texto
+        }
+        while teclas.Length > 4
+            teclas.RemoveAt(1)
+        texto := ""
+        for i, tecla in teclas
+            texto .= (i = 1 ? "" : " + ") tecla
+        Historial[1] := texto sufijo
+    }
 }

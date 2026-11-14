@@ -8,7 +8,7 @@ Hecho con [AutoHotkey v2](https://www.autohotkey.com/) para Windows.
 
 - **Teclas animadas:** bajan y pierden su sombra inferior al pulsarlas, como un teclado físico. El recorrido es de 6 píxeles al tamaño predeterminado, con una transición de 100 ms. Las pulsaciones rápidas permanecen hundidas al menos 180 ms para que se alcancen a ver.
 - **Colores:** amarillo para teclas normales y rojo para modificadores (`Ctrl`, `Shift`, `Alt`, `Alt Gr` y `Win`). Al soltar una tecla, vuelve a subir y conserva el color brevemente.
-- **Combinación actual e historial visual:** la línea «AHORA» muestra la acción reciente. Debajo, una franja independiente representa las últimas cuatro acciones como mini teclas: turquesa para teclas normales y violeta para modificadores, con colores y tamaños distintos del teclado principal. Los atajos se agrupan con signos `+`, los resultados con `⇒` y las repeticiones con `×N`.
+- **Combinación actual e historial visual:** la línea «AHORA» muestra la acción reciente. Debajo, una franja independiente representa hasta cuatro teclas recientes como mini teclas: turquesa para teclas normales y violeta para modificadores, con colores y tamaños distintos del teclado principal. Los atajos se agrupan con signos `+`, los resultados con `⇒` y las repeticiones con `×N`.
 - **Distribuciones Latinoamérica y España:** los símbolos escritos con **Alt Gr** aparecen en azul.
 - **Mouse visual opcional:** cuerpo curvo, botones integrados y rueda central. Los clics izquierdo, derecho y central se iluminan en amarillo; el desplazamiento de la rueda se indica en azul con flechas hacia arriba o abajo. Permite mostrar clics simultáneos.
 - **Resplandor del cursor:** halo amarillo suave que sigue el puntero, sin impedir los clics ni cambiar el foco de la ventana activa. Se controla por separado del mouse visual.
@@ -27,11 +27,14 @@ El **autoocultado solo actúa cuando el mostrador está bloqueado** y esa opció
 
 ## Leer el historial
 
-El teclado grande sigue usando **amarillo y rojo** para mostrar las pulsaciones. La franja **HISTORIAL** usa teclas más pequeñas de color **turquesa y violeta**, para distinguir las acciones anteriores del teclado en vivo.
+Usa **Ctrl + Alt + I** o la opción de la bandeja para **mostrar u ocultar** el historial. La preferencia queda guardada. Al ocultarlo desaparece la franja y el teclado aprovecha ese espacio; la línea de la combinación actual sigue disponible.
+
+El teclado grande sigue usando **amarillo y rojo** para mostrar las pulsaciones. La franja **RECIENTES** usa teclas más pequeñas de color **turquesa y violeta**, para distinguir las acciones anteriores del teclado en vivo.
 
 - Cada atajo mantiene sus teclas juntas, por ejemplo `[Ctrl] + [C]`.
 - Las acciones se leen de **izquierda a derecha, de la más antigua a la más reciente**, separadas por `›`.
-- Se conservan hasta cuatro acciones. Si no caben todas, se muestran las más recientes y `…` indica que hay acciones anteriores fuera de la franja.
+- Se conservan **hasta cuatro teclas en total**, contando también los modificadores: `Ctrl + C` ocupa dos lugares. Los atajos antiguos se retiran completos para no fragmentarlos. Si una combinación supera cuatro teclas, se conservan sus cuatro teclas finales.
+- Las repeticiones consecutivas se agrupan, con un contador limitado a `×4`. Si no caben todas las entradas en pantalla, se priorizan las más recientes.
 - `⇒` muestra el carácter producido y `×N` indica repeticiones consecutivas.
 - Los avisos de tamaño, posición o modo se muestran aparte y no ocupan lugares del historial.
 - En el modo **solo texto**, las mini teclas del historial se presentan en filas, sin el teclado grande.
@@ -60,6 +63,7 @@ Usa **Ctrl y Alt del lado izquierdo**, para evitar conflictos con Alt Gr.
 | `Ctrl + Alt + H` | Alternar entre siempre visible y autoocultado |
 | `Ctrl + Alt + D` | Cambiar entre Latinoamérica y España |
 | `Ctrl + Alt + R` | Volver a la esquina inferior derecha |
+| `Ctrl + Alt + I` | Mostrar / ocultar el historial |
 | `Ctrl + Alt + B` | Mostrar / ocultar el mouse visual |
 | `Ctrl + Alt + M` | Activar / desactivar el resplandor del cursor |
 | `Ctrl + Alt + Q` | Cerrar el programa |
@@ -80,6 +84,7 @@ Puedes editar estas opciones con el programa cerrado y volver a abrirlo para apl
 |---|---|---|---|
 | `[Teclado]` | `DuracionMs` | `6000` | Tiempo de inactividad antes de ocultarse, con el mostrador bloqueado y el autoocultado activo |
 | `[Teclado]` | `ResaltadoMs` | `900` | Tiempo que permanece el color después de soltar una tecla; también se usa para los indicadores del mouse |
+| `[Historial]` | `Mostrar` | `1` | Historial: `1` visible, `0` oculto |
 | `[Mouse]` | `MostrarVisual` | `1` | Mouse visual: `1` activado, `0` desactivado |
 | `[Mouse]` | `Resplandor` | `1` | Halo del cursor: `1` activado, `0` desactivado |
 
