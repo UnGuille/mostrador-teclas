@@ -96,7 +96,7 @@ try {
         Hotkey("~*" boton, ManejarMouse)
 
     SetTimer(Tick, 100)
-    AgregarAlHistorial("Listo: presiona cualquier tecla")
+    AgregarAlHistorial("Listo: teclas animadas (recorrido de 6 px)")
 } catch as err {
     MsgBox("ERROR AL INICIAR:`n`n" err.Message "`n`nLínea: " err.Line, "Mostrador de teclas - error", "Icon!")
     ExitApp()
@@ -251,6 +251,7 @@ Construir() {
     global overlay, txtCombo, txtPrev, Teclas, U, GuiW, GuiH, Visible
     global Escala, Bloqueado, MostrarTeclado, Col, Posiciones, Leyendas, Especiales, MostrarMouse, PartesMouse
 
+    SetTimer(AnimarTeclas, 0)
     if IsObject(overlay)
         overlay.Destroy()
     LiberarRecursos()          ; borrar imagenes/fuentes de la version anterior
@@ -326,10 +327,15 @@ Construir() {
         ; Se precalculan los estados elevados y hundidos, con sus colores.
         pic := overlay.AddText(Format("x{} y{} w{} h{} +0xE", kx, ky, kw, kh))   ; 0xE = SS_BITMAP
         bmps := Map()
-        for estado in ["", "normal", "mod", "normal-down", "mod-down"]
-            bmps[estado] := DibujarTecla(kw, kh, estado, legs)
-        SendMessage(0x172, 0, bmps[""], pic)   ; STM_SETIMAGE
-        Teclas[pos.sc] := {pic: pic, bmps: bmps, estado: ""}
+        for estado in ["", "normal", "mod"] {
+            Loop 7 {
+                fotograma := A_Index - 1
+                bmps[estado "|" fotograma] := DibujarTecla(kw, kh, estado, legs, fotograma)
+            }
+        }
+        SendMessage(0x172, 0, bmps["|0"], pic)   ; STM_SETIMAGE
+        Teclas[pos.sc] := {pic: pic, bmps: bmps, estado: "|0", color: "",
+            nivel: 0.0, desde: 0.0, objetivo: 0, inicio: 0, pulso: -1000}
     }
 
     if MostrarMouse
@@ -346,17 +352,50 @@ PintarTecla(sc, estado) {
     global Teclas, Presionadas
     if !Teclas.Has(sc)
         return
-    if (estado != "" && Presionadas.Has(sc))
-        estado .= "-down"
     k := Teclas[sc]
-    if (k.estado = estado)
-        return
-    k.estado := estado
-    SendMessage(0x172, 0, k.bmps[estado], k.pic)   ; cambiar a la imagen ya dibujada
+    k.color := estado
+    if Presionadas.Has(sc)
+        k.pulso := Presionadas[sc]
+    ActualizarAnimacionTecla(sc, k, A_TickCount)
+    SetTimer(AnimarTeclas, 16)
+}
+
+; Misma idea que translateY(6px) y transition: 0.1s de la referencia.
+AnimarTeclas() {
+    global Teclas
+    pendiente := false
+    ahora := A_TickCount
+    for sc, k in Teclas
+        if ActualizarAnimacionTecla(sc, k, ahora)
+            pendiente := true
+    if !pendiente
+        SetTimer(AnimarTeclas, 0)
+}
+
+ActualizarAnimacionTecla(sc, k, ahora) {
+    global Presionadas
+    ; Tambien las pulsaciones rapidas llegan a verse antes de volver a subir.
+    minimoVisible := ahora - k.pulso < 180
+    objetivo := (Presionadas.Has(sc) || minimoVisible) ? 6 : 0
+    if (objetivo != k.objetivo) {
+        k.desde := k.nivel
+        k.objetivo := objetivo
+        k.inicio := ahora
+    }
+    progreso := Min(1.0, Max(0.0, (ahora - k.inicio) / 100.0))
+    suave := 1 - (1 - progreso)**3
+    k.nivel := k.desde + (k.objetivo - k.desde) * suave
+    fotograma := Max(0, Min(6, Round(k.nivel)))
+    estado := k.color "|" fotograma
+    if (k.estado != estado) {
+        SendMessage(0x172, 0, k.bmps[estado], k.pic)
+        k.estado := estado
+    }
+    return progreso < 1 || minimoVisible
 }
 
 ; Dibuja una tecla (fondo redondeado + leyendas) en un bitmap con GDI
-DibujarTecla(w, h, estado, legs) {
+DibujarTecla(w, h, estado, legs, fotograma := 0) {
     global Col, U, Recursos
     hdcS := DllCall("GetDC", "ptr", 0, "ptr")
     hdc  := DllCall("CreateCompatibleDC", "ptr", hdcS, "ptr")
@@ -372,15 +411,14 @@ DibujarTecla(w, h, estado, legs) {
     DllCall("DeleteObject", "ptr", br)
 
     ; Base fija y superficie elevada: al pulsar baja la cara de la tecla.
-    hundida := InStr(estado, "-down") != 0
-    estado := StrReplace(estado, "-down")
-    profundidad := Max(2, Round(U * 0.10))
-    desplazamiento := hundida ? profundidad - 1 : 0
+    profundidad := Max(4, Round(U * 0.15))
+    desplazamiento := Round(profundidad * fotograma / 6)
+    hundida := fotograma >= 5
     altoCara := h - profundidad
     r := Max(4, Round(U * 0.16))
     colorTecla := (estado = "mod") ? Col.mod : (estado = "normal") ? Col.normal : Col.tecla
     borde := hundida ? "101010" : (estado = "mod") ? "FF7276" : (estado = "normal") ? "FFF19A" : "606060"
-    base := (estado = "mod") ? "741216" : (estado = "normal") ? "80620B" : "171717"
+    base := (estado = "mod") ? "831B22" : (estado = "normal") ? "96700A" : "4B5563"
     RectTecla(hdc, 0, profundidad, w, h, r, base)
     RectTecla(hdc, 0, desplazamiento, w, desplazamiento + altoCara, r, borde)
     bisel := Max(1, Round(U * 0.035))
@@ -809,7 +847,7 @@ ConfigurarBandeja() {
     A_TrayMenu.Add("Resplandor del mouse  (Ctrl+Alt+M)", (*) => AlternarResplandorMouse())
     A_TrayMenu.Add()
     A_TrayMenu.Add("Salir  (Ctrl+Alt+Q)", (*) => ExitApp())
-    A_IconTip := "Mostrador de teclas"
+    A_IconTip := "Mostrador de teclas - pulsacion animada"
 }
 
 
