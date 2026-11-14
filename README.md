@@ -10,8 +10,8 @@ Hecho con [AutoHotkey v2](https://www.autohotkey.com/) para Windows.
 - **Colores:** amarillo para teclas normales y rojo para modificadores (`Ctrl`, `Shift`, `Alt`, `Alt Gr` y `Win`). Al soltar una tecla, vuelve a subir y conserva el color brevemente.
 - **Combinación actual e historial visual:** la línea «AHORA» muestra la acción reciente. Debajo, una franja independiente representa hasta cuatro teclas recientes como mini teclas: turquesa para teclas normales y violeta para modificadores, con colores y tamaños distintos del teclado principal. Los atajos se agrupan con signos `+`, los resultados con `⇒` y las repeticiones con `×N`.
 - **Distribuciones Latinoamérica y España:** los símbolos escritos con **Alt Gr** aparecen en azul.
-- **Mouse visual opcional:** cuerpo curvo, botones integrados y rueda central. Los clics izquierdo, derecho y central se iluminan en amarillo; el desplazamiento de la rueda se indica en azul con flechas hacia arriba o abajo. Permite mostrar clics simultáneos.
-- **Resplandor del cursor:** halo amarillo suave que sigue el puntero, sin impedir los clics ni cambiar el foco de la ventana activa. Se controla por separado del mouse visual.
+- **Mouse visual opcional:** cuerpo curvo, botones integrados y rueda central. Por defecto, los clics izquierdo, derecho y central se iluminan en amarillo y el desplazamiento de la rueda se indica en azul; las flechas indican el sentido de desplazamiento. Ambos colores se pueden personalizar. Permite mostrar clics simultáneos.
+- **Resplandor del cursor:** halo suave con color, diámetro y opacidad personalizables (amarillo por defecto) que sigue el puntero, sin impedir los clics ni cambiar el foco de la ventana activa. Se controla por separado del mouse visual.
 - **Posición y tamaño ajustables:** arrastra el mostrador y cambia su tamaño desde sus bordes o esquinas, manteniendo las proporciones del teclado y del mouse visual. También puedes usar los atajos de tamaño o el modo de solo texto.
 
 ## Cómo usarlo
@@ -24,6 +24,23 @@ Hecho con [AutoHotkey v2](https://www.autohotkey.com/) para Windows.
 Sin configuración previa, el mouse visual y el halo del cursor están activados. Puedes apagarlos de forma independiente; tu preferencia queda guardada.
 
 El **autoocultado solo actúa cuando el mostrador está bloqueado** y esa opción está activada. Tras unos segundos sin actividad se oculta y vuelve a aparecer al pulsar una tecla o usar los botones o la rueda del mouse. Mientras está desbloqueado permanece visible para facilitar su colocación. El halo del cursor funciona independientemente del autoocultado.
+
+## Personalizar el mouse y el aura
+
+Pulsa **⚙ junto al botón de minimizar**, en la esquina superior derecha. También puedes abrir **Ajustes del mouse y aura...** desde la bandeja o hacer **clic derecho en el icono flotante ⌨** cuando esté minimizado.
+
+Desde el panel puedes:
+
+- Activar o desactivar el aura del cursor.
+- Elegir su **color**, aumentar o reducir su **diámetro entre 40 y 240 píxeles** y ajustar su **opacidad entre 5 y 85 %**.
+- Mostrar u ocultar el mouse visual del teclado.
+- Cambiar por separado los colores del **cuerpo**, los **botones en reposo**, los **clics** y el **desplazamiento de la rueda** del mouse visual.
+
+Cada campo tiene una muestra de color y un botón **Elegir color...** que abre el selector de Windows. También puedes escribir un código HEX, por ejemplo `FF8800` o `#FF8800`.
+
+Pulsa **Aplicar** para ver y guardar los cambios. **Restablecer valores** carga los valores predeterminados en el formulario; pulsa Aplicar para guardarlos. Cerrar el panel sin aplicar descarta las modificaciones pendientes.
+
+Los ajustes se conservan al reiniciar. Puedes personalizar el aura mientras el mostrador está minimizado, sin expandirlo.
 
 ## Minimizar y expandir
 
@@ -98,6 +115,13 @@ Puedes editar estas opciones con el programa cerrado y volver a abrirlo para apl
 | `[Historial]` | `Mostrar` | `1` | Historial: `1` visible, `0` oculto |
 | `[Mouse]` | `MostrarVisual` | `1` | Mouse visual: `1` activado, `0` desactivado |
 | `[Mouse]` | `Resplandor` | `1` | Halo del cursor: `1` activado, `0` desactivado |
+| `[Mouse]` | `HaloTam` | `88` | Diámetro del aura en píxeles (40–240) |
+| `[Mouse]` | `HaloColor` | `FFD600` | Color HEX del aura |
+| `[Mouse]` | `HaloOpacidad` | `35` | Opacidad máxima del aura, en porcentaje (5–85) |
+| `[Mouse]` | `ColorCuerpo` | `B6BEC7` | Color HEX del cuerpo del mouse visual |
+| `[Mouse]` | `ColorBotones` | `E5E9ED` | Color HEX de los botones en reposo |
+| `[Mouse]` | `ColorPulsado` | `FFD21F` | Color HEX del clic y la rueda pulsada |
+| `[Mouse]` | `ColorRueda` | `5AB0FF` | Color HEX del desplazamiento de la rueda |
 
 La duración de la animación de pulsación es independiente de `ResaltadoMs`.
 

@@ -63,7 +63,14 @@ global ResplandorMouse := Integer(IniRead(ArchivoConfig, "Mouse", "Resplandor", 
 global MostrarMouse := Integer(IniRead(ArchivoConfig, "Mouse", "MostrarVisual", "1"))
 global PartesMouse := Map(), EventosMouse := Map()
 global HaloMouse := 0, HaloDC := 0, HaloBitmap := 0, HaloAnterior := 0
-global HaloTam := 88, HaloX := "", HaloY := ""
+global HaloTam := Max(40, Min(240, Integer(IniRead(ArchivoConfig, "Mouse", "HaloTam", "88"))))
+global HaloColor := ColorMouseValido(IniRead(ArchivoConfig, "Mouse", "HaloColor", "FFD600"), "FFD600")
+global HaloOpacidad := Max(5, Min(85, Integer(IniRead(ArchivoConfig, "Mouse", "HaloOpacidad", "35"))))
+global MouseCuerpo := ColorMouseValido(IniRead(ArchivoConfig, "Mouse", "ColorCuerpo", "B6BEC7"), "B6BEC7")
+global MouseBotones := ColorMouseValido(IniRead(ArchivoConfig, "Mouse", "ColorBotones", "E5E9ED"), "E5E9ED")
+global MousePulsado := ColorMouseValido(IniRead(ArchivoConfig, "Mouse", "ColorPulsado", "FFD21F"), "FFD21F")
+global MouseRueda := ColorMouseValido(IniRead(ArchivoConfig, "Mouse", "ColorRueda", "5AB0FF"), "5AB0FF")
+global HaloX := "", HaloY := ""
 
 ; ---------------- ESTADO ----------------
 global Bloqueado := false, Visible := false
@@ -76,7 +83,8 @@ global overlay := 0, txtCombo := 0, txtPrev := 0, U := 40, GuiW := 0, GuiH := 0
 global ih := 0, Recursos := [], Fuentes := Map()
 global Redimension := 0, HwndTeclado := 0
 global Minimizado := false, ControlMinimizar := 0, BotonMinimizar := 0
-global IconoMinX := 0, IconoMinY := 0
+global IconoMinX := 0, IconoMinY := 0, BotonAjustes := 0
+global AjustesMouseGui := 0, CamposMouse := 0, ColoresMousePersonalizados := Buffer(64, 0)
 
 try {
     OnMessage(0x0047, SeguirPosicionMostrador) ; WM_WINDOWPOSCHANGED
@@ -304,7 +312,7 @@ Construir() {
             GuiW := Round(14 * U) + 2 * pad
             GuiH := Round(U * 0.8) + 2 * overlay.MarginY
             overlay.SetFont("s" Pt(U * 0.45) " c" Col.barra " bold", "Segoe UI")
-            txtCombo := overlay.AddText(Format("x{} y{} w{} h{} +0x200 +0x80", pad, overlay.MarginY, Round(14 * U) - TamBotonMinimizar() - Round(U * 0.15), Round(U * 0.8)))
+            txtCombo := overlay.AddText(Format("x{} y{} w{} h{} +0x200 +0x80", pad, overlay.MarginY, Round(14 * U) - 2 * TamBotonMinimizar() - Round(U * 0.25), Round(U * 0.8)))
             txtPrev := 0
             WinSetTransparent(245, overlay)
             return
@@ -332,7 +340,7 @@ Construir() {
 
     ; El estado actual es grande; el historial usa mini teclas de otra paleta.
     overlay.SetFont("s" Pt(U * 0.45) " c" Col.barra " bold", "Segoe UI")
-    txtCombo := overlay.AddText(Format("x{} y{} w{} h{} +0x200 +0x80 +0x4000", pad, pad, HistorialW - TamBotonMinimizar() - Round(U * 0.15), barH), "")
+    txtCombo := overlay.AddText(Format("x{} y{} w{} h{} +0x200 +0x80 +0x4000", pad, pad, HistorialW - 2 * TamBotonMinimizar() - Round(U * 0.25), barH), "")
     txtPrev := 0
     if MostrarHistorial
         HistorialPic := overlay.AddText(Format("x{} y{} w{} h{} +0xE", pad, historialY, HistorialW, HistorialH))
@@ -899,6 +907,7 @@ CalcularPosicion(w, h) {
 
 GuardarConfig() {
     global ArchivoConfig, Distribucion, Escala, MostrarTeclado, AutoOcultar, DuracionMs, ResaltadoMs, Anclaje, MargenX, MargenY, ResplandorMouse, MostrarMouse, MostrarHistorial
+    global HaloTam, HaloColor, HaloOpacidad, MouseCuerpo, MouseBotones, MousePulsado, MouseRueda
     IniWrite(Distribucion,   ArchivoConfig, "Teclado", "Distribucion")
     IniWrite(Escala,         ArchivoConfig, "Teclado", "Escala")
     IniWrite(MostrarTeclado, ArchivoConfig, "Teclado", "MostrarTeclado")
@@ -911,12 +920,16 @@ GuardarConfig() {
     IniWrite(ResplandorMouse, ArchivoConfig, "Mouse", "Resplandor")
     IniWrite(MostrarMouse, ArchivoConfig, "Mouse", "MostrarVisual")
     IniWrite(MostrarHistorial, ArchivoConfig, "Historial", "Mostrar")
+    for clave, valor in Map("HaloTam", HaloTam, "HaloColor", HaloColor, "HaloOpacidad", HaloOpacidad,
+        "ColorCuerpo", MouseCuerpo, "ColorBotones", MouseBotones, "ColorPulsado", MousePulsado, "ColorRueda", MouseRueda)
+        IniWrite(valor, ArchivoConfig, "Mouse", clave)
 }
 
 ConfigurarBandeja() {
     global MostrarMouse, MostrarHistorial
     A_TrayMenu.Delete()
     A_TrayMenu.Add("Minimizar / expandir  (Ctrl+Alt+N)", (*) => AlternarMinimizado())
+    A_TrayMenu.Add("Ajustes del mouse y aura...", (*) => AbrirAjustesMouse())
     A_TrayMenu.Add()
     A_TrayMenu.Add("Bloquear / desbloquear posición  (Ctrl+Alt+L)", (*) => AlternarBloqueo())
     A_TrayMenu.Add("Más grande  (Ctrl+Alt+RePág)", (*) => CambiarEscala(0.1))
@@ -942,29 +955,55 @@ ConfigurarBandeja() {
 ; Halo amarillo suave, independiente del autoocultado del teclado.
 ; Ventana por pixel: no roba el foco y todos los clics la atraviesan.
 CrearHaloMouse() {
-    global HaloMouse, HaloDC, HaloBitmap, HaloAnterior, HaloTam
-    HaloMouse := Gui("+AlwaysOnTop -Caption +ToolWindow -DPIScale +E0x80020 +E0x08000000")
+    global HaloMouse, HaloDC, HaloBitmap, HaloAnterior, HaloTam, HaloColor, HaloOpacidad
+    ; Preparar los recursos nuevos antes de soltar los anteriores.
+    nuevoGui := Gui("+AlwaysOnTop -Caption +ToolWindow -DPIScale +E0x80020 +E0x08000000")
     bi := Buffer(40, 0)
     NumPut("uint", 40, "int", HaloTam, "int", -HaloTam, "ushort", 1, "ushort", 32, bi)
     bits := 0
-    HaloDC := DllCall("CreateCompatibleDC", "ptr", 0, "ptr")
-    HaloBitmap := DllCall("CreateDIBSection", "ptr", HaloDC, "ptr", bi,
+    nuevoDC := DllCall("CreateCompatibleDC", "ptr", 0, "ptr")
+    nuevoBmp := DllCall("CreateDIBSection", "ptr", nuevoDC, "ptr", bi,
         "uint", 0, "ptr*", &bits, "ptr", 0, "uint", 0, "ptr")
-    if (!HaloDC || !HaloBitmap)
+    if (!nuevoDC || !nuevoBmp) {
+        nuevoGui.Destroy()
+        if nuevoBmp
+            DllCall("DeleteObject", "ptr", nuevoBmp)
+        if nuevoDC
+            DllCall("DeleteDC", "ptr", nuevoDC)
         throw Error("No se pudo crear el resplandor del mouse.")
-    HaloAnterior := DllCall("SelectObject", "ptr", HaloDC, "ptr", HaloBitmap, "ptr")
+    }
+    nuevoAnterior := DllCall("SelectObject", "ptr", nuevoDC, "ptr", nuevoBmp, "ptr")
     radio := HaloTam / 2
+    rgb := Integer("0x" HaloColor)
+    rojo := (rgb >> 16) & 255, verde := (rgb >> 8) & 255, azul := rgb & 255
+    intensidad := 255 * HaloOpacidad / 100
     Loop HaloTam {
         y := A_Index - 1
         Loop HaloTam {
             x := A_Index - 1
             distancia := Sqrt((x - radio + 0.5)**2 + (y - radio + 0.5)**2)
-            ; Amarillo con alpha premultiplicado y borde difuminado.
-            alpha := Round(90 * Max(0, 1 - (distancia / radio)**2)**1.4)
-            pixel := (alpha << 24) | (alpha << 16) | (Round(alpha * 0.84) << 8)
+            alpha := Round(intensidad * Max(0, 1 - (distancia / radio)**2)**1.4)
+            pixel := (alpha << 24) | (Round(rojo * alpha / 255) << 16)
+                | (Round(verde * alpha / 255) << 8) | Round(azul * alpha / 255)
             NumPut("uint", pixel, bits + 4 * (y * HaloTam + x))
         }
     }
+    DestruirHaloMouse()
+    HaloMouse := nuevoGui, HaloDC := nuevoDC, HaloBitmap := nuevoBmp, HaloAnterior := nuevoAnterior
+}
+
+DestruirHaloMouse() {
+    global HaloMouse, HaloDC, HaloBitmap, HaloAnterior
+    SetTimer(ActualizarHaloMouse, 0)
+    if IsObject(HaloMouse)
+        HaloMouse.Destroy()
+    if (HaloDC && HaloAnterior)
+        DllCall("SelectObject", "ptr", HaloDC, "ptr", HaloAnterior)
+    if HaloBitmap
+        DllCall("DeleteObject", "ptr", HaloBitmap)
+    if HaloDC
+        DllCall("DeleteDC", "ptr", HaloDC)
+    HaloMouse := 0, HaloDC := 0, HaloBitmap := 0, HaloAnterior := 0
 }
 
 ActualizarHaloMouse() {
@@ -1013,18 +1052,12 @@ AlternarResplandorMouse() {
 }
 
 LiberarHaloMouse(*) {
-    global HaloMouse, HaloDC, HaloBitmap, HaloAnterior, ControlMinimizar
+    global ControlMinimizar, AjustesMouseGui
     if IsObject(ControlMinimizar)
         ControlMinimizar.Destroy()
-    SetTimer(ActualizarHaloMouse, 0)
-    if IsObject(HaloMouse)
-        HaloMouse.Destroy()
-    if (HaloDC && HaloAnterior)
-        DllCall("SelectObject", "ptr", HaloDC, "ptr", HaloAnterior)
-    if HaloBitmap
-        DllCall("DeleteObject", "ptr", HaloBitmap)
-    if HaloDC
-        DllCall("DeleteDC", "ptr", HaloDC)
+    if IsObject(AjustesMouseGui)
+        AjustesMouseGui.Destroy()
+    DestruirHaloMouse()
 }
 
 
@@ -1066,7 +1099,7 @@ RefrescarMouseVisual() {
 
 ; Silueta con curvas Bezier, dibujada a triple resolucion para suavizar bordes.
 DibujarMouse(w, h, estado) {
-    global Col, Recursos
+    global Col, Recursos, MouseCuerpo, MouseBotones, MousePulsado, MouseRueda
     ww := w * 3, hh := h * 3
     dc := DllCall("CreateCompatibleDC", "ptr", 0, "ptr")
     pantalla := DllCall("GetDC", "ptr", 0, "ptr")
@@ -1087,16 +1120,16 @@ DibujarMouse(w, h, estado) {
     MouseCurva(dc, sx, sy, forma, "33383E", "080A0C", 2)
     MouseCurva(dc, sx, sy, [56,11, 23,11,14,21,12,53,
         10,66,9,79,9,89, 26,84,42,83,56,83,
-        56,60,56,34,56,11], (estado & 1) ? "FFD21F" : "E5E9ED", "161A20", 1.6)
+        56,60,56,34,56,11], (estado & 1) ? MousePulsado : MouseBotones, "161A20", 1.6)
     MouseCurva(dc, sx, sy, [56,11, 89,11,98,21,100,53,
         102,66,103,79,103,89, 86,84,70,83,56,83,
-        56,60,56,34,56,11], (estado & 2) ? "FFD21F" : "E5E9ED", "161A20", 1.6)
+        56,60,56,34,56,11], (estado & 2) ? MousePulsado : MouseBotones, "161A20", 1.6)
     ; Panel de palma, con una curva que une ambos botones.
     MouseCurva(dc, sx, sy, [9,94, 38,86,74,86,103,94,
         105,119,104,145,97,162, 91,177,76,180,56,180,
-        36,180,21,177,15,162, 8,145,7,119,9,94], "B6BEC7", "161A20", 1.6)
+        36,180,21,177,15,162, 8,145,7,119,9,94], MouseCuerpo, "161A20", 1.6)
     ; Rueda central con surcos. Se ilumina al pulsar o desplazar.
-    rueda := (estado & 4) ? "FFD21F" : (estado & 24) ? "5AB0FF" : "555F6A"
+    rueda := (estado & 4) ? MousePulsado : (estado & 24) ? MouseRueda : "555F6A"
     MouseCurva(dc, sx, sy, [56,29, 48,29,47,34,47,40,
         47,47,47,56,47,62, 47,70,50,73,56,73,
         62,73,65,70,65,62, 65,56,65,47,65,40,
@@ -1106,10 +1139,10 @@ DibujarMouse(w, h, estado) {
         MouseLinea(dc, sx, sy, 51, yy, 61, yy, "909AA4", 0.7)
     }
     ; Flechas discretas: azul indica el sentido de desplazamiento.
-    MouseLinea(dc, sx, sy, 52,24,56,20, (estado & 8) ? "5AB0FF" : "707983", 1.6)
-    MouseLinea(dc, sx, sy, 56,20,60,24, (estado & 8) ? "5AB0FF" : "707983", 1.6)
-    MouseLinea(dc, sx, sy, 52,77,56,81, (estado & 16) ? "5AB0FF" : "707983", 1.6)
-    MouseLinea(dc, sx, sy, 56,81,60,77, (estado & 16) ? "5AB0FF" : "707983", 1.6)
+    MouseLinea(dc, sx, sy, 52,24,56,20, (estado & 8) ? MouseRueda : "707983", 1.6)
+    MouseLinea(dc, sx, sy, 56,20,60,24, (estado & 8) ? MouseRueda : "707983", 1.6)
+    MouseLinea(dc, sx, sy, 52,77,56,81, (estado & 16) ? MouseRueda : "707983", 1.6)
+    MouseLinea(dc, sx, sy, 56,81,60,77, (estado & 16) ? MouseRueda : "707983", 1.6)
     salida := DllCall("CreateCompatibleDC", "ptr", dc, "ptr")
     previo := DllCall("SelectObject", "ptr", salida, "ptr", bmp, "ptr")
     DllCall("SetStretchBltMode", "ptr", salida, "int", 4)
@@ -1591,7 +1624,7 @@ TamBotonMinimizar() {
 }
 
 CrearControlMinimizar() {
-    global ControlMinimizar, BotonMinimizar
+    global ControlMinimizar, BotonMinimizar, BotonAjustes
     ; Una ventana independiente permite pulsarlo incluso con el teclado bloqueado.
     ControlMinimizar := Gui("+AlwaysOnTop -Caption +ToolWindow -DPIScale +E0x08000000", "Minimizar mostrador")
     ControlMinimizar.MarginX := 0, ControlMinimizar.MarginY := 0
@@ -1599,6 +1632,9 @@ CrearControlMinimizar() {
     ControlMinimizar.SetFont("s" Pt(17) " cDBEAFE", "Segoe UI Symbol")
     BotonMinimizar := ControlMinimizar.AddText("x0 y0 w26 h26 Center +0x200 +0x100", "−")
     BotonMinimizar.OnEvent("Click", (*) => AlternarMinimizado())
+    BotonAjustes := ControlMinimizar.AddText("x0 y0 w26 h26 Center +0x200 +0x100", "⚙")
+    BotonAjustes.OnEvent("Click", (*) => AbrirAjustesMouse())
+    ControlMinimizar.OnEvent("ContextMenu", (*) => AbrirAjustesMouse())
     ControlMinimizar.OnEvent("Close", (*) => AlternarMinimizado())
 }
 
@@ -1609,7 +1645,7 @@ SeguirPosicionMostrador(wParam, lParam, msg, hwnd) {
 }
 
 ActualizarControlMinimizar() {
-    global ControlMinimizar, BotonMinimizar, Minimizado, Visible, overlay, U
+    global ControlMinimizar, BotonMinimizar, BotonAjustes, Minimizado, Visible, overlay, U
     global IconoMinX, IconoMinY, MostrarTeclado, MostrarHistorial
     if !IsObject(ControlMinimizar)
         return
@@ -1619,6 +1655,7 @@ ActualizarControlMinimizar() {
     }
     if Minimizado {
         tam := Max(30, Round(38 * A_ScreenDPI / 96))
+        ancho := tam, separacion := 0
         x := IconoMinX, y := IconoMinY
         BotonMinimizar.Text := "⌨"
         ControlMinimizar.Title := "Expandir teclado (Ctrl+Alt+N)"
@@ -1627,7 +1664,9 @@ ActualizarControlMinimizar() {
         tam := TamBotonMinimizar()
         pad := Round(U * 0.3)
         margenY := MostrarTeclado ? pad : Round(pad * 0.6)
-        x := ox + ow - pad - tam, y := oy + margenY
+        separacion := Max(2, Round(U * 0.1))
+        ancho := 2 * tam + separacion
+        x := ox + ow - pad - ancho, y := oy + margenY
         BotonMinimizar.Text := "−"
         ControlMinimizar.Title := "Minimizar teclado (Ctrl+Alt+N)"
     }
@@ -1636,13 +1675,19 @@ ActualizarControlMinimizar() {
     info := Buffer(40, 0)
     NumPut("uint", 40, info)
     if DllCall("GetMonitorInfoW", "ptr", monitor, "ptr", info) {
-        x := Max(NumGet(info, 20, "int"), Min(x, NumGet(info, 28, "int") - tam))
+        x := Max(NumGet(info, 20, "int"), Min(x, NumGet(info, 28, "int") - ancho))
         y := Max(NumGet(info, 24, "int"), Min(y, NumGet(info, 32, "int") - tam))
     }
-    IconoMinX := x, IconoMinY := y
-    BotonMinimizar.Move(0, 0, tam, tam)
+    IconoMinX := Minimizado ? x : x + tam + separacion
+    IconoMinY := y
+    BotonAjustes.Visible := !Minimizado
+    if !Minimizado {
+        BotonAjustes.Move(0, 0, tam, tam)
+        BotonAjustes.SetFont("s" Pt(tam * 0.65) " cDBEAFE", "Segoe UI Symbol")
+    }
+    BotonMinimizar.Move(Minimizado ? 0 : tam + separacion, 0, tam, tam)
     BotonMinimizar.SetFont("s" Pt(tam * 0.65) " cDBEAFE", "Segoe UI Symbol")
-    ControlMinimizar.Show(Format("x{} y{} w{} h{} NoActivate", x, y, tam, tam))
+    ControlMinimizar.Show(Format("x{} y{} w{} h{} NoActivate", x, y, ancho, tam))
     ControlMinimizar.Opt("+AlwaysOnTop")
 }
 
@@ -1666,4 +1711,161 @@ AlternarMinimizado() {
         RefrescarMouseVisual()
         AgregarAlHistorial("Mostrador expandido")
     }
+}
+
+
+; ============================================================
+; AJUSTES DE AURA Y COLORES DEL MOUSE
+; ============================================================
+
+ColorMouseValido(valor, defecto := "") {
+    valor := StrUpper(LTrim(Trim(valor), "#"))
+    return RegExMatch(valor, "^[0-9A-F]{6}$") ? valor : defecto
+}
+
+AbrirAjustesMouse() {
+    global AjustesMouseGui, CamposMouse, Redimension
+    global ResplandorMouse, MostrarMouse, HaloTam, HaloColor, HaloOpacidad
+    global MouseCuerpo, MouseBotones, MousePulsado, MouseRueda
+    if IsObject(Redimension)
+        return
+    if IsObject(AjustesMouseGui) {
+        AjustesMouseGui.Show()
+        return
+    }
+    g := Gui("+AlwaysOnTop +ToolWindow", "Ajustes del mouse y aura")
+    AjustesMouseGui := g
+    g.SetFont("s10", "Segoe UI")
+    g.BackColor := "F4F6FA"
+    g.AddText("x18 y14 w475 h22", "AURA DEL CURSOR")
+    activo := g.AddCheckbox("x18 y42 w465 h24", "Activar el resplandor que sigue al cursor")
+    activo.Value := ResplandorMouse
+    color := CampoColorMouse(g, 76, "Color del aura", HaloColor)
+    g.AddText("x18 y120 w170 h24", "Diámetro del aura")
+    diametro := g.AddSlider("x198 y114 w235 h32 Range40-240 ToolTip", HaloTam)
+    diamTexto := g.AddText("x438 y120 w65 h24", HaloTam " px")
+    diametro.OnEvent("Change", (*) => diamTexto.Text := diametro.Value " px")
+    g.AddText("x18 y162 w170 h24", "Opacidad del aura")
+    opacidad := g.AddSlider("x198 y156 w235 h32 Range5-85 ToolTip", HaloOpacidad)
+    opTexto := g.AddText("x438 y162 w65 h24", HaloOpacidad "%")
+    opacidad.OnEvent("Change", (*) => opTexto.Text := opacidad.Value "%")
+    g.AddText("x18 y207 w475 h22", "MOUSE VISUAL DEL TECLADO")
+    visible := g.AddCheckbox("x18 y235 w465 h24", "Mostrar el mouse visual junto al teclado")
+    visible.Value := MostrarMouse
+    cuerpo := CampoColorMouse(g, 272, "Cuerpo del mouse", MouseCuerpo)
+    botones := CampoColorMouse(g, 308, "Botones en reposo", MouseBotones)
+    pulsado := CampoColorMouse(g, 344, "Clics y rueda pulsada", MousePulsado)
+    rueda := CampoColorMouse(g, 380, "Desplazamiento de rueda", MouseRueda)
+    g.AddText("x18 y424 w480 h36", "Puedes elegir un color o escribir su código HEX. Pulsa Aplicar para guardar los cambios.")
+    g.AddButton("x18 y476 w135 h30", "Restablecer valores").OnEvent("Click", (*) => RestablecerAjustesMouse())
+    g.AddButton("x285 y476 w100 h30 Default", "Aplicar").OnEvent("Click", (*) => AplicarAjustesMouse())
+    g.AddButton("x395 y476 w100 h30", "Cerrar").OnEvent("Click", CerrarAjustesMouse)
+    CamposMouse := {activo: activo, visible: visible, color: color, diametro: diametro,
+        diamTexto: diamTexto, opacidad: opacidad, opTexto: opTexto,
+        cuerpo: cuerpo, botones: botones, pulsado: pulsado, rueda: rueda}
+    g.OnEvent("Close", CerrarAjustesMouse)
+    g.OnEvent("Escape", CerrarAjustesMouse)
+    g.Show("w515 h524")
+}
+
+CampoColorMouse(g, y, etiqueta, valor) {
+    g.AddText(Format("x18 y{} w180 h25 +0x200", y), etiqueta)
+    muestra := g.AddText(Format("x202 y{} w30 h25 Background{}", y, valor))
+    campo := g.AddEdit(Format("x244 y{} w110 h25 Limit7", y), valor)
+    g.AddButton(Format("x368 y{} w127 h25", y), "Elegir color...").OnEvent("Click", (*) => ElegirColorMouse(campo, muestra, g.Hwnd))
+    campo.OnEvent("Change", (*) => ActualizarMuestraMouse(campo, muestra))
+    return {campo: campo, muestra: muestra}
+}
+
+ActualizarMuestraMouse(campo, muestra) {
+    color := ColorMouseValido(campo.Text)
+    if color != "" {
+        muestra.Opt("Background" color)
+        DllCall("InvalidateRect", "ptr", muestra.Hwnd, "ptr", 0, "int", true)
+    }
+}
+
+ElegirColorMouse(campo, muestra, owner) {
+    global ColoresMousePersonalizados
+    color := ColorMouseValido(campo.Text, "FFD600")
+    cc := Buffer(A_PtrSize = 8 ? 72 : 36, 0)
+    NumPut("uint", cc.Size, cc)
+    NumPut("ptr", owner, cc, A_PtrSize = 8 ? 8 : 4)
+    NumPut("uint", BGR(color), cc, A_PtrSize = 8 ? 24 : 12)
+    NumPut("ptr", ColoresMousePersonalizados.Ptr, cc, A_PtrSize = 8 ? 32 : 16)
+    NumPut("uint", 3, cc, A_PtrSize = 8 ? 40 : 20) ; RGBINIT | FULLOPEN
+    if !DllCall("Comdlg32\ChooseColorW", "ptr", cc)
+        return
+    rgb := NumGet(cc, A_PtrSize = 8 ? 24 : 12, "uint")
+    campo.Text := Format("{:02X}{:02X}{:02X}", rgb & 255, (rgb >> 8) & 255, (rgb >> 16) & 255)
+    ActualizarMuestraMouse(campo, muestra)
+}
+
+CerrarAjustesMouse(*) {
+    global AjustesMouseGui, CamposMouse
+    if IsObject(AjustesMouseGui)
+        AjustesMouseGui.Destroy()
+    AjustesMouseGui := 0, CamposMouse := 0
+}
+
+RestablecerAjustesMouse() {
+    global CamposMouse
+    c := CamposMouse
+    c.activo.Value := 1, c.visible.Value := 1
+    c.diametro.Value := 88, c.diamTexto.Text := "88 px"
+    c.opacidad.Value := 35, c.opTexto.Text := "35%"
+    for nombre, color in Map("color", "FFD600", "cuerpo", "B6BEC7", "botones", "E5E9ED", "pulsado", "FFD21F", "rueda", "5AB0FF") {
+        item := c.%nombre%
+        item.campo.Text := color
+        ActualizarMuestraMouse(item.campo, item.muestra)
+    }
+}
+
+AplicarAjustesMouse() {
+    global CamposMouse, Redimension, ResplandorMouse, MostrarMouse, AjustesMouseGui
+    global HaloTam, HaloColor, HaloOpacidad, MouseCuerpo, MouseBotones, MousePulsado, MouseRueda
+    if IsObject(Redimension)
+        return
+    c := CamposMouse
+    colores := Map()
+    for nombre in ["color", "cuerpo", "botones", "pulsado", "rueda"] {
+        item := c.%nombre%
+        valor := ColorMouseValido(item.campo.Text)
+        if valor = "" {
+            MsgBox("Escribe un color HEX de seis caracteres, por ejemplo FF8800.", "Color no válido", "Icon!")
+            item.campo.Focus()
+            return
+        }
+        colores[nombre] := valor
+    }
+    Critical
+    viejo := {tam: HaloTam, color: HaloColor, opacidad: HaloOpacidad}
+    cambiarMouse := (MouseCuerpo != colores["cuerpo"] || MouseBotones != colores["botones"]
+        || MousePulsado != colores["pulsado"] || MouseRueda != colores["rueda"] || MostrarMouse != c.visible.Value)
+    SetTimer(ActualizarHaloMouse, 0)
+    HaloTam := Max(40, Min(240, Integer(c.diametro.Value)))
+    HaloColor := colores["color"]
+    HaloOpacidad := Max(5, Min(85, Integer(c.opacidad.Value)))
+    try CrearHaloMouse()
+    catch as err {
+        HaloTam := viejo.tam, HaloColor := viejo.color, HaloOpacidad := viejo.opacidad
+        AplicarResplandorMouse()
+        MsgBox(err.Message, "No se pudieron aplicar los ajustes", "Icon!")
+        return
+    }
+    ResplandorMouse := c.activo.Value, MostrarMouse := c.visible.Value
+    MouseCuerpo := colores["cuerpo"], MouseBotones := colores["botones"]
+    MousePulsado := colores["pulsado"], MouseRueda := colores["rueda"]
+    AplicarResplandorMouse()
+    if MostrarMouse
+        A_TrayMenu.Check("Mostrar / ocultar mouse visual  (Ctrl+Alt+B)")
+    else
+        A_TrayMenu.Uncheck("Mostrar / ocultar mouse visual  (Ctrl+Alt+B)")
+    GuardarConfig()
+    if cambiarMouse
+        Reconstruir("Colores del mouse guardados")
+    else
+        AgregarAlHistorial("Ajustes del aura guardados")
+    AjustesMouseGui.Opt("+AlwaysOnTop")
+    AjustesMouseGui.Show()
 }
