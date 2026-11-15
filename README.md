@@ -1,4 +1,4 @@
-﻿# Mostrador de Teclas
+# Mostrador de Teclas
 
 Teclado y mouse visuales en pantalla para clases, tutoriales y demostraciones. Muestra las teclas y combinaciones que pulsas, anima su movimiento y ayuda a seguir el cursor.
 
@@ -130,3 +130,23 @@ La duración de la animación de pulsación es independiente de `ResaltadoMs`.
 - En ventanas que se ejecutan como administrador, puede ser necesario ejecutar también el mostrador como administrador para detectar las pulsaciones.
 - La tecla `Fn` de las laptops no se puede detectar.
 - El mouse visual representa los clics izquierdo, derecho y central, y la rueda vertical. Los botones laterales y la rueda horizontal aparecen en el historial de texto.
+
+
+## Notas de clase
+
+Pulsa **✎**, junto a ⚙ y minimizar, o **Ctrl + Alt + O** (del lado izquierdo).
+Escribe la nota y pulsa **Aplicar** para mostrarla encima del historial y del teclado.
+También aparece en el modo de solo texto y se oculta al minimizar.
+
+- Texto y fondo con colores personalizables mediante un selector visual.
+- Fuente monoespaciada (Consolas por defecto), tamaño de 10 a 48 puntos y negrita.
+- Altura configurable de 1 a 8 líneas; el texto se ajusta al ancho. Si no cabe,
+  aumenta las líneas o reduce el tamaño. El editor conserva el contenido completo.
+- Opción **Marcar espacios**: muestra `·` por espacio y `→` por tabulación,
+  sin modificar el texto guardado. Permite distinguir `palabras juntas` de `palabras  separadas`.
+- **Ctrl + Alt + T** muestra u oculta la nota sin borrarla.
+
+Las notas siguen la visibilidad del mostrador. Para mantenerlas en pantalla,
+desactiva el ocultado automático con **Ctrl + Alt + H**.
+El contenido se guarda en `overlay-nota.txt`; la apariencia, en `overlay-config.ini`.
+Ambos son archivos locales excluidos de Git. Cerrar el editor sin aplicar descarta los cambios.

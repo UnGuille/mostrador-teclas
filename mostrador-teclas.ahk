@@ -84,6 +84,17 @@ global ih := 0, Recursos := [], Fuentes := Map()
 global Redimension := 0, HwndTeclado := 0, CerrandoMostrador := false
 global Minimizado := false, ControlMinimizar := 0, BotonMinimizar := 0
 global IconoMinX := 0, IconoMinY := 0, BotonAjustes := 0
+global ArchivoNota := A_ScriptDir "\overlay-nota.txt"
+global NotaTexto := LeerNota()
+global NotaMostrar := Integer(IniRead(ArchivoConfig, "Notas", "Mostrar", "0"))
+global NotaFuente := IniRead(ArchivoConfig, "Notas", "Fuente", "Consolas")
+global NotaTam := Max(10, Min(48, Integer(IniRead(ArchivoConfig, "Notas", "Tamano", "20"))))
+global NotaLineas := Max(1, Min(8, Integer(IniRead(ArchivoConfig, "Notas", "Lineas", "3"))))
+global NotaNegrita := Integer(IniRead(ArchivoConfig, "Notas", "Negrita", "1"))
+global NotaEspacios := Integer(IniRead(ArchivoConfig, "Notas", "Espacios", "0"))
+global NotaColor := ColorMouseValido(IniRead(ArchivoConfig, "Notas", "Color", "FFF4CC"), "FFF4CC")
+global NotaFondo := ColorMouseValido(IniRead(ArchivoConfig, "Notas", "Fondo", "182438"), "182438")
+global NotasGui := 0, CamposNotas := 0, BotonNotas := 0
 global AjustesMouseGui := 0, CamposMouse := 0, ColoresMousePersonalizados := Buffer(64, 0)
 
 try {
@@ -141,6 +152,8 @@ try {
 <^<!i::AlternarHistorial()
 <^<!b::AlternarMouseVisual()
 <^<!m::AlternarResplandorMouse()
+<^<!o::AbrirNotas()
+<^<!t::AlternarNota()
 <^<!q::ExitApp()
 
 Pt(px) => Max(6, Round(px * 72 / A_ScreenDPI))
@@ -310,16 +323,19 @@ Construir() {
         overlay.MarginY := Round(pad * 0.6)
         if !MostrarHistorial {
             GuiW := Round(14 * U) + 2 * pad
-            GuiH := Round(U * 0.8) + 2 * overlay.MarginY
+            GuiH := Round(U * 0.8) + 2 * overlay.MarginY + AltoNota(Escala)
+            CrearNota(pad, overlay.MarginY + Round(U * 0.8), GuiW - 2 * pad)
             overlay.SetFont("s" Pt(U * 0.45) " c" Col.barra " bold", "Segoe UI")
-            txtCombo := overlay.AddText(Format("x{} y{} w{} h{} +0x200 +0x80", pad, overlay.MarginY, Round(14 * U) - 2 * TamBotonMinimizar() - Round(U * 0.25), Round(U * 0.8)))
+            txtCombo := overlay.AddText(Format("x{} y{} w{} h{} +0x200 +0x80", pad, overlay.MarginY, Round(14 * U) - 3 * TamBotonMinimizar() - Round(U * 0.25), Round(U * 0.8)))
             txtPrev := 0
             WinSetTransparent(245, overlay)
             return
         }
         HistorialW := Round(14 * U), HistorialH := Round(3.8 * U)
         GuiW := HistorialW + 2 * overlay.MarginX
-        GuiH := HistorialH + 2 * overlay.MarginY
+        notaH := AltoNota(Escala)
+        GuiH := HistorialH + 2 * overlay.MarginY + notaH
+        CrearNota(pad, overlay.MarginY + HistorialH, HistorialW)
         HistorialPic := overlay.AddText(Format("x{} y{} w{} h{} +0xE", overlay.MarginX, overlay.MarginY, HistorialW, HistorialH))
         txtCombo := 0, txtPrev := 0
         WinSetTransparent(245, overlay)
@@ -334,13 +350,14 @@ Construir() {
     GuiW := anchoTec + 2 * pad + (MostrarMouse ? Round(3.5 * U) : 0)
     HistorialW := GuiW - 2 * pad
     HistorialH := MostrarHistorial ? Round(1.25 * U) : 0
-    historialY := pad + barH + (MostrarHistorial ? Round(U * 0.15) : 0)
+    CrearNota(pad, pad + barH, HistorialW)
+    historialY := pad + barH + AltoNota(Escala) + (MostrarHistorial ? Round(U * 0.15) : 0)
     top := historialY + HistorialH + Round(U * 0.2)
     GuiH := top + Round(6.25 * U) + pad
 
     ; El estado actual es grande; el historial usa mini teclas de otra paleta.
     overlay.SetFont("s" Pt(U * 0.45) " c" Col.barra " bold", "Segoe UI")
-    txtCombo := overlay.AddText(Format("x{} y{} w{} h{} +0x200 +0x80 +0x4000", pad, pad, HistorialW - 2 * TamBotonMinimizar() - Round(U * 0.25), barH), "")
+    txtCombo := overlay.AddText(Format("x{} y{} w{} h{} +0x200 +0x80 +0x4000", pad, pad, HistorialW - 3 * TamBotonMinimizar() - Round(U * 0.25), barH), "")
     txtPrev := 0
     if MostrarHistorial
         HistorialPic := overlay.AddText(Format("x{} y{} w{} h{} +0xE", pad, historialY, HistorialW, HistorialH))
@@ -910,6 +927,7 @@ CalcularPosicion(w, h) {
 }
 
 GuardarConfig() {
+    GuardarEstiloNota()
     global ArchivoConfig, Distribucion, Escala, MostrarTeclado, AutoOcultar, DuracionMs, ResaltadoMs, Anclaje, MargenX, MargenY, ResplandorMouse, MostrarMouse, MostrarHistorial
     global HaloTam, HaloColor, HaloOpacidad, MouseCuerpo, MouseBotones, MousePulsado, MouseRueda
     IniWrite(Distribucion,   ArchivoConfig, "Teclado", "Distribucion")
@@ -933,6 +951,8 @@ ConfigurarBandeja() {
     global MostrarMouse, MostrarHistorial
     A_TrayMenu.Delete()
     A_TrayMenu.Add("Minimizar / expandir  (Ctrl+Alt+N)", (*) => AlternarMinimizado())
+    A_TrayMenu.Add("Editar nota de clase...  (Ctrl+Alt+O)", (*) => AbrirNotas())
+    A_TrayMenu.Add("Mostrar / ocultar nota  (Ctrl+Alt+T)", (*) => AlternarNota())
     A_TrayMenu.Add("Ajustes del mouse y aura...", (*) => AbrirAjustesMouse())
     A_TrayMenu.Add()
     A_TrayMenu.Add("Bloquear / desbloquear posición  (Ctrl+Alt+L)", (*) => AlternarBloqueo())
@@ -1056,7 +1076,9 @@ AlternarResplandorMouse() {
 }
 
 LiberarHaloMouse(*) {
-    global ControlMinimizar, AjustesMouseGui
+    global ControlMinimizar, AjustesMouseGui, NotasGui
+    if IsObject(NotasGui)
+        NotasGui.Destroy()
     if IsObject(ControlMinimizar)
         ControlMinimizar.Destroy()
     if IsObject(AjustesMouseGui)
@@ -1316,7 +1338,7 @@ DimensionesTeclado(escala) {
     unidad := Round(40 * escala * A_ScreenDPI / 96)
     pad := Round(unidad * 0.3)
     w := Round(18.5 * unidad) + 2 * pad + (MostrarMouse ? Round(3.5 * unidad) : 0)
-    h := pad + Round(unidad * 0.75)
+    h := pad + Round(unidad * 0.75) + AltoNota(escala)
         + (MostrarHistorial ? Round(unidad * 0.15) + Round(unidad * 1.25) : 0)
         + Round(unidad * 0.2) + Round(6.25 * unidad) + pad
     return [w, h]
@@ -1646,7 +1668,7 @@ TamBotonMinimizar() {
 }
 
 CrearControlMinimizar() {
-    global ControlMinimizar, BotonMinimizar, BotonAjustes
+    global ControlMinimizar, BotonMinimizar, BotonAjustes, BotonNotas
     ; Una ventana independiente permite pulsarlo incluso con el teclado bloqueado.
     ControlMinimizar := Gui("+AlwaysOnTop -Caption +ToolWindow -DPIScale +E0x08000000", "Minimizar mostrador")
     ControlMinimizar.MarginX := 0, ControlMinimizar.MarginY := 0
@@ -1656,6 +1678,8 @@ CrearControlMinimizar() {
     BotonMinimizar.OnEvent("Click", (*) => AlternarMinimizado())
     BotonAjustes := ControlMinimizar.AddText("x0 y0 w26 h26 Center +0x200 +0x100", "⚙")
     BotonAjustes.OnEvent("Click", (*) => AbrirAjustesMouse())
+    BotonNotas := ControlMinimizar.AddText("x0 y0 w26 h26 Center +0x200 +0x100", "✎")
+    BotonNotas.OnEvent("Click", (*) => AbrirNotas())
     ControlMinimizar.OnEvent("ContextMenu", (*) => AbrirAjustesMouse())
     ControlMinimizar.OnEvent("Close", (*) => AlternarMinimizado())
 }
@@ -1671,7 +1695,7 @@ SeguirPosicionMostrador(wParam, lParam, msg, hwnd) {
 ActualizarControlMinimizar() {
     if !VentanaMostradorDisponible()
         return
-    global ControlMinimizar, BotonMinimizar, BotonAjustes, Minimizado, Visible, overlay, U
+    global ControlMinimizar, BotonMinimizar, BotonAjustes, BotonNotas, Minimizado, Visible, overlay, U
     global IconoMinX, IconoMinY, MostrarTeclado, MostrarHistorial
     if !IsObject(ControlMinimizar)
         return
@@ -1691,7 +1715,7 @@ ActualizarControlMinimizar() {
         pad := Round(U * 0.3)
         margenY := MostrarTeclado ? pad : Round(pad * 0.6)
         separacion := Max(2, Round(U * 0.1))
-        ancho := 2 * tam + separacion
+        ancho := 3 * tam + 2 * separacion
         x := ox + ow - pad - ancho, y := oy + margenY
         BotonMinimizar.Text := "−"
         ControlMinimizar.Title := "Minimizar teclado (Ctrl+Alt+N)"
@@ -1704,14 +1728,17 @@ ActualizarControlMinimizar() {
         x := Max(NumGet(info, 20, "int"), Min(x, NumGet(info, 28, "int") - ancho))
         y := Max(NumGet(info, 24, "int"), Min(y, NumGet(info, 32, "int") - tam))
     }
-    IconoMinX := Minimizado ? x : x + tam + separacion
+    IconoMinX := Minimizado ? x : x + 2 * (tam + separacion)
     IconoMinY := y
+    BotonNotas.Visible := !Minimizado
     BotonAjustes.Visible := !Minimizado
     if !Minimizado {
-        BotonAjustes.Move(0, 0, tam, tam)
+        BotonNotas.Move(0, 0, tam, tam)
+        BotonNotas.SetFont("s" Pt(tam * 0.65) " cDBEAFE", "Segoe UI Symbol")
+        BotonAjustes.Move(tam + separacion, 0, tam, tam)
         BotonAjustes.SetFont("s" Pt(tam * 0.65) " cDBEAFE", "Segoe UI Symbol")
     }
-    BotonMinimizar.Move(Minimizado ? 0 : tam + separacion, 0, tam, tam)
+    BotonMinimizar.Move(Minimizado ? 0 : 2 * (tam + separacion), 0, tam, tam)
     BotonMinimizar.SetFont("s" Pt(tam * 0.65) " cDBEAFE", "Segoe UI Symbol")
     ControlMinimizar.Show(Format("x{} y{} w{} h{} NoActivate", x, y, ancho, tam))
     ControlMinimizar.Opt("+AlwaysOnTop")
@@ -1945,4 +1972,155 @@ CerrarMostrador(*) {
         DllCall("DeleteObject", "ptr", HistorialBitmap)
     HistorialBitmap := 0
     LiberarRecursos()
+}
+
+; Notas independientes del historial: espacios intactos y fuente monoespaciada.
+LeerNota() {
+    global ArchivoNota
+    try return FileRead(ArchivoNota, "UTF-8")
+    catch
+        return ""
+}
+
+TextoNotaVisible(texto, marcas) {
+    texto := StrReplace(texto, "`r")
+    resultado := "", columna := 0
+    Loop Parse texto {
+        ch := A_LoopField
+        if ch = "`n" {
+            resultado .= ch, columna := 0
+        } else if ch = "`t" {
+            cantidad := 4 - Mod(columna, 4)
+            resultado .= marcas ? "→" : " "
+            Loop cantidad - 1
+                resultado .= marcas ? "·" : " "
+            columna += cantidad
+        } else {
+            resultado .= marcas && ch = " " ? "·" : ch
+            columna += 1
+        }
+    }
+    return resultado
+}
+
+AltoNota(escala) {
+    global NotaMostrar, NotaTexto, NotaTam, NotaLineas
+    if !NotaMostrar || NotaTexto = ""
+        return 0
+    return Round((NotaTam * A_ScreenDPI / 72 * 1.45 * NotaLineas + 20 * A_ScreenDPI / 96) * escala)
+}
+
+CrearNota(x, y, w) {
+    global overlay, Escala, NotaTam, NotaFuente, NotaColor, NotaFondo, NotaNegrita, NotaTexto, NotaEspacios, U
+    h := AltoNota(Escala)
+    if !h
+        return
+    pad := Max(4, Round(U * 0.15))
+    overlay.AddText(Format("x{} y{} w{} h{} Background{}", x, y + pad, w, h - pad, NotaFondo), "")
+    overlay.SetFont("s" Max(6, Round(NotaTam * Escala)) " c" NotaColor (NotaNegrita ? " bold" : " norm"), NotaFuente)
+    overlay.AddText(Format("x{} y{} w{} h{} Background{} +0x80", x + pad, y + 2 * pad, w - 2 * pad, h - 3 * pad, NotaFondo), TextoNotaVisible(NotaTexto, NotaEspacios))
+}
+
+GuardarEstiloNota() {
+    global ArchivoConfig, NotaMostrar, NotaFuente, NotaTam, NotaLineas, NotaNegrita, NotaEspacios, NotaColor, NotaFondo
+    for k, v in Map("Mostrar", NotaMostrar, "Fuente", NotaFuente, "Tamano", NotaTam, "Lineas", NotaLineas,
+        "Negrita", NotaNegrita, "Espacios", NotaEspacios, "Color", NotaColor, "Fondo", NotaFondo)
+        IniWrite(v, ArchivoConfig, "Notas", k)
+}
+
+AlternarNota() {
+    global NotaMostrar, NotaTexto, Redimension
+    if IsObject(Redimension)
+        return
+    if NotaTexto = "" {
+        AbrirNotas()
+        return
+    }
+    NotaMostrar := !NotaMostrar
+    GuardarEstiloNota()
+    Reconstruir(NotaMostrar ? "Nota visible" : "Nota oculta")
+}
+
+CerrarNotas(*) {
+    global NotasGui, CamposNotas
+    if IsObject(NotasGui)
+        NotasGui.Destroy()
+    NotasGui := 0, CamposNotas := 0
+}
+
+AbrirNotas() {
+    global NotasGui, CamposNotas, NotaMostrar, NotaTexto, NotaFuente, NotaTam, NotaLineas
+    global NotaNegrita, NotaEspacios, NotaColor, NotaFondo, Redimension
+    if IsObject(Redimension)
+        return
+    if IsObject(NotasGui) {
+        NotasGui.Show()
+        return
+    }
+    g := Gui("+AlwaysOnTop", "Notas de clase · Mostrador de teclas")
+    NotasGui := g
+    g.SetFont("s10", "Segoe UI")
+    g.AddText("x18 y14 w500 h26", "NOTA DE CLASE · texto independiente del historial")
+    mostrar := g.AddCheckbox("x18 y46 w500 h26", "Mostrar nota encima del teclado")
+    mostrar.Value := NotaTexto = "" ? 1 : NotaMostrar
+    g.SetFont("s11 norm", "Consolas")
+    texto := g.AddEdit("x18 y80 w500 h180 Multi WantTab -Wrap Limit0", NotaTexto)
+    g.SetFont("s10 norm", "Segoe UI")
+    g.AddText("x18 y276 w56 h24", "Fuente")
+    fuentes := ["Consolas", "Cascadia Mono", "Lucida Console", "Courier New"]
+    fuente := g.AddDropDownList("x78 y272 w220", fuentes)
+    fuente.Choose(1)
+    for i, nombre in fuentes
+        if nombre = NotaFuente
+            fuente.Choose(i)
+    g.AddText("x312 y276 w65 h24", "Tamaño")
+    tam := g.AddEdit("x382 y272 w64 Number", NotaTam)
+    g.AddUpDown("Range10-48", NotaTam)
+    negrita := g.AddCheckbox("x18 y310 w220 h26", "Negrita")
+    negrita.Value := NotaNegrita
+    color := CampoColorMouse(g, 352, "Color del texto", NotaColor)
+    fondo := CampoColorMouse(g, 392, "Color del fondo", NotaFondo)
+    espacios := g.AddCheckbox("x18 y436 w500 h26", "Marcar espacios (·) y tabulaciones (→)")
+    espacios.Value := NotaEspacios
+    g.AddText("x18 y480 w245 h25", "Altura del panel (líneas)")
+    lineas := g.AddEdit("x280 y476 w70 Number", NotaLineas)
+    g.AddUpDown("Range1-8", NotaLineas)
+    g.AddText("x18 y520 w500 h58", "Las fuentes monoespaciadas distinguen cada carácter. Si el texto no cabe, aumenta la altura o reduce el tamaño. Aplicar conserva exactamente los espacios y saltos de línea.")
+    g.AddButton("x260 y594 w130 h32 Default", "Aplicar").OnEvent("Click", AplicarNota)
+    g.AddButton("x400 y594 w118 h32", "Cerrar").OnEvent("Click", CerrarNotas)
+    g.OnEvent("Close", CerrarNotas)
+    g.OnEvent("Escape", CerrarNotas)
+    CamposNotas := {mostrar: mostrar, texto: texto, fuente: fuente, tam: tam, negrita: negrita,
+        color: color, fondo: fondo, espacios: espacios, lineas: lineas}
+    g.Show("w538 h644")
+    texto.Focus()
+}
+
+AplicarNota(*) {
+    global CamposNotas, NotasGui, ArchivoNota, NotaMostrar, NotaTexto, NotaFuente, NotaTam, NotaLineas
+    global NotaNegrita, NotaEspacios, NotaColor, NotaFondo, Redimension
+    if IsObject(Redimension)
+        return
+    c := CamposNotas
+    color := ColorMouseValido(c.color.campo.Value), fondo := ColorMouseValido(c.fondo.campo.Value)
+    if color = "" || fondo = "" || !IsInteger(c.tam.Value) || !IsInteger(c.lineas.Value) {
+        MsgBox("Revisa los colores (6 dígitos hexadecimales), el tamaño y las líneas.", "Nota de clase")
+        return
+    }
+    texto := c.texto.Value
+    try {
+        f := FileOpen(ArchivoNota ".tmp", "w", "UTF-8-RAW")
+        f.Write(texto)
+        f.Close()
+        FileMove(ArchivoNota ".tmp", ArchivoNota, true)
+    } catch as err {
+        MsgBox("No se pudo guardar la nota: " err.Message, "Nota de clase")
+        return
+    }
+    NotaTexto := texto, NotaMostrar := c.mostrar.Value, NotaFuente := c.fuente.Text
+    NotaTam := Max(10, Min(48, Integer(c.tam.Value))), NotaLineas := Max(1, Min(8, Integer(c.lineas.Value)))
+    NotaNegrita := c.negrita.Value, NotaEspacios := c.espacios.Value
+    NotaColor := color, NotaFondo := fondo
+    GuardarEstiloNota()
+    Reconstruir("Nota guardada · Ctrl+Alt+T para mostrar / ocultar")
 }
