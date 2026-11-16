@@ -327,7 +327,7 @@ Construir() {
         overlay.MarginY := Round(pad * 0.6)
         if !MostrarHistorial {
             GuiW := Round(14 * U) + 2 * pad
-            GuiH := Round(U * 0.8) + 2 * overlay.MarginY + AltoNota(Escala)
+            GuiH := Round(U * 0.8) + 2 * overlay.MarginY
             CrearNota()
             overlay.SetFont("s" Pt(U * 0.45) " c" Col.barra " bold", "Segoe UI")
             txtCombo := overlay.AddText(Format("x{} y{} w{} h{} +0x200 +0x80", pad, overlay.MarginY, Round(14 * U) - 3 * TamBotonMinimizar() - Round(U * 0.25), Round(U * 0.8)))
@@ -337,10 +337,9 @@ Construir() {
         }
         HistorialW := Round(14 * U), HistorialH := Round(3.8 * U)
         GuiW := HistorialW + 2 * overlay.MarginX
-        espacioNota := EspacioNota(AltoNota(Escala))
-        GuiH := HistorialH + 2 * overlay.MarginY + espacioNota
+        GuiH := HistorialH + 2 * overlay.MarginY
         CrearNota()
-        HistorialPic := overlay.AddText(Format("x{} y{} w{} h{} +0xE", overlay.MarginX, overlay.MarginY + espacioNota, HistorialW, HistorialH))
+        HistorialPic := overlay.AddText(Format("x{} y{} w{} h{} +0xE", overlay.MarginX, overlay.MarginY, HistorialW, HistorialH))
         txtCombo := 0, txtPrev := 0
         WinSetTransparent(245, overlay)
         return
@@ -355,7 +354,7 @@ Construir() {
     HistorialW := GuiW - 2 * pad
     HistorialH := MostrarHistorial ? Round(1.25 * U) : 0
     CrearNota()
-    historialY := pad + barH + AltoNota(Escala) + (MostrarHistorial ? Round(U * 0.15) : 0)
+    historialY := pad + barH + (MostrarHistorial ? Round(U * 0.15) : 0)
     top := historialY + HistorialH + Round(U * 0.2)
     GuiH := top + Round(6.25 * U) + pad
 
@@ -1343,7 +1342,7 @@ DimensionesTeclado(escala) {
     unidad := Round(40 * escala * A_ScreenDPI / 96)
     pad := Round(unidad * 0.3)
     w := Round(18.5 * unidad) + 2 * pad + (MostrarMouse ? Round(3.5 * unidad) : 0)
-    h := pad + Round(unidad * 0.75) + AltoNota(escala)
+    h := pad + Round(unidad * 0.75)
         + (MostrarHistorial ? Round(unidad * 0.15) + Round(unidad * 1.25) : 0)
         + Round(unidad * 0.2) + Round(6.25 * unidad) + pad
     return [w, h]
@@ -2065,19 +2064,21 @@ CrearNota() {
     g.BackColor := NotaFondo
     g.MarginX := 0, g.MarginY := 0
     cab := CabeceraNota(Escala), pad := Max(3, Round(U * 0.12)), tam := cab - 2 * pad
+    ; La barra queda junto al teclado tanto con la nota abierta como contraída.
+    yBarra := h - cab + pad
     g.SetFont("s" Pt(tam * 0.55) " c" NotaColor, "Segoe UI")
-    NotaEstado := g.AddText(Format("x{} y{} w{} h{} +0x200", pad, pad, Max(20, w - 6 * (tam + pad) - 3 * pad), tam), "NOTA")
+    NotaEstado := g.AddText(Format("x{} y{} w{} h{} +0x200", pad, yBarra, Max(20, w - 6 * (tam + pad) - 3 * pad), tam), "NOTA")
     acciones := [[NotaEditando ? "✓" : "✎", (*) => EditarNotaDirecta()],
         ["A−", (*) => CambiarLetraNota(-2)], ["A+", (*) => CambiarLetraNota(2)],
         [NotaContraida ? "▾" : "−", (*) => ContraerNota()],
         ["×", (*) => OcultarNotaDirecta()], ["⚙", (*) => AbrirNotas()]]
     for i, a in acciones {
-        boton := g.AddText(Format("x{} y{} w{} h{} Center +0x200 +0x100", w - (7 - i) * (tam + pad), pad, tam, tam), a[1])
+        boton := g.AddText(Format("x{} y{} w{} h{} Center +0x200 +0x100", w - (7 - i) * (tam + pad), yBarra, tam, tam), a[1])
         boton.OnEvent("Click", a[2])
     }
     if !NotaContraida {
         g.SetFont("s" Max(6, Round(NotaTam * Escala)) " c" NotaColor (NotaNegrita ? " bold" : " norm"), NotaFuente)
-        opts := Format("x{} y{} w{} h{}", pad, cab + pad, w - 2 * pad, h - cab - 2 * pad)
+        opts := Format("x{} y{} w{} h{}", pad, pad, w - 2 * pad, h - cab - 2 * pad)
         if NotaEditando {
             NotaEditor := g.AddEdit(opts " Multi WantTab Limit0 -E0x200 Background" NotaFondo, NotaTexto)
             NotaEditor.OnEvent("Change", NotaModificada)
@@ -2091,58 +2092,21 @@ CrearNota() {
     PanelNota := {gui: g, ancho: w, alto: h}
 }
 
-; En modo compacto con historial se reserva además sitio para la barra general.
-EspacioNota(alto) {
-    global MostrarTeclado, MostrarHistorial, U
-    return alto + (alto && !MostrarTeclado && MostrarHistorial ? Round(U * 0.8) : 0)
-}
-
 ActualizarNota(mensaje) {
-    global PanelNota, Escala, GuiW, GuiH, overlay, Teclas, PartesMouse, HistorialPic
-    global Visible, Minimizado
     criticoAnterior := A_IsCritical
     Critical "On"
     try {
-        altoAnterior := IsObject(PanelNota) ? PanelNota.alto : 0
-        diferencia := EspacioNota(AltoNota(Escala)) - EspacioNota(altoAnterior)
         DestruirPanelNota()
-        if diferencia {
-            ; Mueve los controles sin repintarlos mientras aún se superponen.
-            for _, tecla in Teclas
-                DesplazarControlNota(tecla.pic, diferencia)
-            if PartesMouse.Has("dibujo")
-                DesplazarControlNota(PartesMouse["dibujo"].pic, diferencia)
-            if IsObject(HistorialPic)
-                DesplazarControlNota(HistorialPic, diferencia)
-            GuiH += diferencia
-            if Visible && !Minimizado {
-                pos := CalcularPosicion(GuiW, GuiH)
-                ; Aplica las nuevas dimensiones antes de repintar el mostrador.
-                DllCall("SetWindowPos", "ptr", overlay.Hwnd, "ptr", 0, "int", pos[1], "int", pos[2],
-                    "int", GuiW, "int", GuiH, "uint", 0x14) ; NOZORDER | NOACTIVATE
-            }
-        }
         CrearNota()
         AgregarAlHistorial(mensaje)
         PosicionarPanelNota()
-        if diferencia && Visible && !Minimizado {
-            ; Borra los restos de las posiciones anteriores y repinta fondo y teclas.
-            DllCall("RedrawWindow", "ptr", overlay.Hwnd, "ptr", 0, "ptr", 0,
-                "uint", 0x185) ; INVALIDATE | ERASE | ALLCHILDREN | UPDATENOW
-        }
     } finally {
         Critical criticoAnterior
     }
 }
 
-DesplazarControlNota(control, diferencia) {
-    control.GetPos(&x, &y)
-    DllCall("SetWindowPos", "ptr", control.Hwnd, "ptr", 0, "int", x, "int", y + diferencia,
-        "int", 0, "int", 0, "uint", 0x1D) ; NOSIZE | NOZORDER | NOREDRAW | NOACTIVATE
-}
-
 PosicionarPanelNota() {
-    global PanelNota, Visible, Minimizado, overlay, Redimension, U, MostrarTeclado
+    global PanelNota, Visible, Minimizado, overlay, Redimension, U
     criticoAnterior := A_IsCritical
     Critical "On"
     try {
@@ -2155,8 +2119,8 @@ PosicionarPanelNota() {
         }
         overlay.GetPos(&x, &y)
         pad := Round(U * 0.3)
-        inicioNota := MostrarTeclado ? pad + Round(U * 0.75) : overlay.MarginY + Round(U * 0.8)
-        panel.gui.Show(Format("x{} y{} w{} h{} NoActivate", x + pad, y + inicioNota, panel.ancho, panel.alto))
+        ; Conserva el borde inferior de la nota al cambiar su altura.
+        panel.gui.Show(Format("x{} y{} w{} h{} NoActivate", x + pad, y - panel.alto, panel.ancho, panel.alto))
     } finally {
         Critical criticoAnterior
     }
