@@ -135,18 +135,31 @@ La duración de la animación de pulsación es independiente de `ResaltadoMs`.
 ## Notas de clase
 
 Pulsa **✎**, junto a ⚙ y minimizar, o **Ctrl + Alt + O** (del lado izquierdo).
-Escribe la nota y pulsa **Aplicar** para mostrarla encima del historial y del teclado.
-También aparece en el modo de solo texto y se oculta al minimizar.
+Puedes escribir directamente sobre la nota, sin abrir ajustes. El texto se guarda
+automáticamente tras una breve pausa; pulsa **✓** para terminar de editar.
+También puedes hacer doble clic sobre el texto para editarlo.
 
-- Texto y fondo con colores personalizables mediante un selector visual.
-- Fuente monoespaciada (Consolas por defecto), tamaño de 10 a 48 puntos y negrita.
-- Altura configurable de 1 a 8 líneas; el texto se ajusta al ancho. Si no cabe,
-  aumenta las líneas o reduce el tamaño. El editor conserva el contenido completo.
-- Opción **Marcar espacios**: muestra `·` por espacio y `→` por tabulación,
-  sin modificar el texto guardado. Permite distinguir `palabras juntas` de `palabras  separadas`.
-- **Ctrl + Alt + T** muestra u oculta la nota sin borrarla.
+La propia nota tiene estos controles:
 
-Las notas siguen la visibilidad del mostrador. Para mantenerlas en pantalla,
-desactiva el ocultado automático con **Ctrl + Alt + H**.
-El contenido se guarda en `overlay-nota.txt`; la apariencia, en `overlay-config.ini`.
-Ambos son archivos locales excluidos de Git. Cerrar el editor sin aplicar descarta los cambios.
+| Control | Acción |
+|---|---|
+| ✎ / ✓ | Editar el texto / terminar y guardar |
+| A− / A+ | Reducir / aumentar la letra en 2 puntos (entre 10 y 48) |
+| − / ▾ | Minimizar la nota a su barra / expandirla |
+| × | Ocultar la nota sin borrarla |
+| ⚙ | Colores, fuente, negrita, altura y espacios visibles |
+
+El botón ✎ principal recupera una nota oculta y permite editarla. **Ctrl + Alt + T**
+también muestra u oculta la nota. Los controles funcionan con el teclado bloqueado.
+La nota acompaña al teclado al moverlo o cambiar su tamaño y se oculta al minimizar
+todo el mostrador. Durante la edición no se activa el ocultado automático.
+
+Se usa una fuente monoespaciada (Consolas por defecto). En ⚙ puedes cambiar los colores
+del texto y del fondo, elegir otra fuente, activar negrita y ajustar la altura de
+1 a 8 líneas. Si el texto no cabe, aumenta las líneas o reduce la letra.
+**Marcar espacios** representa cada espacio con `·` y cada tabulación con `→` durante
+la lectura; al editar se muestra el texto original y se conservan todos los espacios.
+
+Para mantener la nota visible fuera de la edición, desactiva el ocultado automático
+con **Ctrl + Alt + H**. El contenido se guarda en `overlay-nota.txt` y la apariencia
+en `overlay-config.ini`; ambos son locales y están excluidos de Git.
