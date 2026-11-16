@@ -152,7 +152,8 @@ La propia nota tiene estos controles:
 El botón ✎ principal recupera una nota oculta y permite editarla. **Ctrl + Alt + T**
 también muestra u oculta la nota. Los controles funcionan con el teclado bloqueado.
 La nota acompaña al teclado al moverlo o cambiar su tamaño y se oculta al minimizar
-todo el mostrador. Durante la edición no se activa el ocultado automático.
+todo el mostrador. Al editar, guardar, contraer o cambiar la letra, el teclado
+sigue visible. Durante la edición no se activa el ocultado automático.
 
 Se usa una fuente monoespaciada (Consolas por defecto). En ⚙ puedes cambiar los colores
 del texto y del fondo, elegir otra fuente, activar negrita y ajustar la altura de

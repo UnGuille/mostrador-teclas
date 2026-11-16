@@ -337,10 +337,10 @@ Construir() {
         }
         HistorialW := Round(14 * U), HistorialH := Round(3.8 * U)
         GuiW := HistorialW + 2 * overlay.MarginX
-        notaH := AltoNota(Escala)
-        GuiH := HistorialH + 2 * overlay.MarginY + notaH + (notaH ? Round(U * 0.8) : 0)
+        espacioNota := EspacioNota(AltoNota(Escala))
+        GuiH := HistorialH + 2 * overlay.MarginY + espacioNota
         CrearNota(pad, overlay.MarginY + Round(U * 0.8), HistorialW)
-        HistorialPic := overlay.AddText(Format("x{} y{} w{} h{} +0xE", overlay.MarginX, overlay.MarginY + notaH + (notaH ? Round(U * 0.8) : 0), HistorialW, HistorialH))
+        HistorialPic := overlay.AddText(Format("x{} y{} w{} h{} +0xE", overlay.MarginX, overlay.MarginY + espacioNota, HistorialW, HistorialH))
         txtCombo := 0, txtPrev := 0
         WinSetTransparent(245, overlay)
         return
@@ -2045,11 +2045,11 @@ GuardarNotaDirecta(*) {
 }
 
 DestruirPanelNota() {
-    global PanelNota, NotaEditor, NotaEstado
+    global PanelNota, NotaEditor, NotaEstado, NotaRect
     GuardarNotaDirecta()
     if IsObject(PanelNota)
         PanelNota.Destroy()
-    PanelNota := 0, NotaEditor := 0, NotaEstado := 0
+    PanelNota := 0, NotaEditor := 0, NotaEstado := 0, NotaRect := 0
 }
 
 CrearNota(x, y, w) {
@@ -2087,6 +2087,51 @@ CrearNota(x, y, w) {
     }
     g.OnEvent("Close", (*) => OcultarNotaDirecta())
     g.OnEvent("Escape", (*) => FinalizarEdicionNota())
+}
+
+; En modo compacto con historial se reserva además sitio para la barra general.
+EspacioNota(alto) {
+    global MostrarTeclado, MostrarHistorial, U
+    return alto + (alto && !MostrarTeclado && MostrarHistorial ? Round(U * 0.8) : 0)
+}
+
+ActualizarNota(mensaje) {
+    global NotaRect, Escala, U, GuiW, GuiH, overlay, Teclas, PartesMouse, HistorialPic
+    global MostrarTeclado, Visible, Minimizado
+    Critical "On"
+    try {
+        altoAnterior := IsObject(NotaRect) ? NotaRect.h : 0
+        diferencia := EspacioNota(AltoNota(Escala)) - EspacioNota(altoAnterior)
+        if diferencia {
+            ; Conserva los controles y las imágenes del teclado y actualiza su posición.
+            for _, tecla in Teclas
+                DesplazarControlNota(tecla.pic, diferencia)
+            if PartesMouse.Has("dibujo")
+                DesplazarControlNota(PartesMouse["dibujo"].pic, diferencia)
+            if IsObject(HistorialPic)
+                DesplazarControlNota(HistorialPic, diferencia)
+            GuiH += diferencia
+            if Visible && !Minimizado {
+                pos := CalcularPosicion(GuiW, GuiH)
+                ; Actualiza el rectángulo sin ocultar ni activar el mostrador.
+                DllCall("SetWindowPos", "ptr", overlay.Hwnd, "ptr", 0, "int", pos[1], "int", pos[2],
+                    "int", GuiW, "int", GuiH, "uint", 0x14) ; NOZORDER | NOACTIVATE
+            }
+        }
+        DestruirPanelNota()
+        pad := Round(U * 0.3)
+        y := MostrarTeclado ? pad + Round(U * 0.75) : overlay.MarginY + Round(U * 0.8)
+        CrearNota(pad, y, GuiW - 2 * pad)
+        AgregarAlHistorial(mensaje)
+        PosicionarPanelNota()
+    } finally {
+        Critical "Off"
+    }
+}
+
+DesplazarControlNota(control, diferencia) {
+    control.GetPos(, &y)
+    control.Move(, y + diferencia)
 }
 
 PosicionarPanelNota() {
@@ -2130,7 +2175,7 @@ EditarNotaDirecta(*) {
     if Minimizado
         AlternarMinimizado()
     GuardarEstiloNota()
-    Reconstruir("Edita directamente la nota · ✓ para terminar")
+    ActualizarNota("Edita directamente la nota · ✓ para terminar")
     FocoNota()
 }
 
@@ -2139,7 +2184,7 @@ FinalizarEdicionNota(*) {
     if !NotaEditando || !GuardarNotaDirecta()
         return
     NotaEditando := false
-    Reconstruir("Nota guardada")
+    ActualizarNota("Nota guardada")
 }
 
 CambiarLetraNota(delta) {
@@ -2150,7 +2195,7 @@ CambiarLetraNota(delta) {
     if IsObject(CamposNotas)
         CamposNotas.tam.Value := NotaTam
     GuardarEstiloNota()
-    Reconstruir("Letra de la nota: " NotaTam " pt")
+    ActualizarNota("Letra de la nota: " NotaTam " pt")
     FocoNota()
 }
 
@@ -2160,7 +2205,7 @@ ContraerNota(*) {
         return
     NotaEditando := false, NotaContraida := !NotaContraida
     GuardarEstiloNota()
-    Reconstruir(NotaContraida ? "Nota minimizada · ▾ para expandir" : "Nota expandida")
+    ActualizarNota(NotaContraida ? "Nota minimizada · ▾ para expandir" : "Nota expandida")
 }
 
 OcultarNotaDirecta(*) {
@@ -2169,7 +2214,7 @@ OcultarNotaDirecta(*) {
         return
     NotaEditando := false, NotaMostrar := 0
     GuardarEstiloNota()
-    Reconstruir("Nota oculta · ✎ para recuperarla")
+    ActualizarNota("Nota oculta · ✎ para recuperarla")
 }
 
 
@@ -2182,7 +2227,7 @@ GuardarEstiloNota() {
 }
 
 AlternarNota() {
-    global NotaMostrar, NotaTexto, Redimension
+    global NotaMostrar, NotaTexto, NotaEditando, Redimension
     if IsObject(Redimension)
         return
     if NotaTexto = "" {
@@ -2191,10 +2236,10 @@ AlternarNota() {
     }
     if !GuardarNotaDirecta()
         return
-    FinalizarEdicionNota()
+    NotaEditando := false
     NotaMostrar := !NotaMostrar
     GuardarEstiloNota()
-    Reconstruir(NotaMostrar ? "Nota visible" : "Nota oculta")
+    ActualizarNota(NotaMostrar ? "Nota visible" : "Nota oculta")
 }
 
 CerrarNotas(*) {
@@ -2255,8 +2300,8 @@ AbrirNotas() {
 
 AplicarNota(*) {
     global CamposNotas, NotasGui, ArchivoNota, NotaMostrar, NotaTexto, NotaFuente, NotaTam, NotaLineas
-    global NotaNegrita, NotaEspacios, NotaColor, NotaFondo, Redimension
-    if IsObject(Redimension)
+    global NotaNegrita, NotaEspacios, NotaColor, NotaFondo, Redimension, NotaGuardada, NotaEditando
+    if IsObject(Redimension) || !GuardarNotaDirecta()
         return
     c := CamposNotas
     color := ColorMouseValido(c.color.campo.Value), fondo := ColorMouseValido(c.fondo.campo.Value)
@@ -2264,7 +2309,6 @@ AplicarNota(*) {
         MsgBox("Revisa los colores (6 dígitos hexadecimales), el tamaño y las líneas.", "Nota de clase")
         return
     }
-    FinalizarEdicionNota()
     texto := c.texto.Value
     try {
         f := FileOpen(ArchivoNota ".tmp", "w", "UTF-8-RAW")
@@ -2275,10 +2319,12 @@ AplicarNota(*) {
         MsgBox("No se pudo guardar la nota: " err.Message, "Nota de clase")
         return
     }
-    NotaTexto := texto, NotaMostrar := c.mostrar.Value, NotaFuente := c.fuente.Text
+    NotaEditando := false
+    NotaTexto := texto, NotaGuardada := texto
+    NotaMostrar := c.mostrar.Value, NotaFuente := c.fuente.Text
     NotaTam := Max(10, Min(48, Integer(c.tam.Value))), NotaLineas := Max(1, Min(8, Integer(c.lineas.Value)))
     NotaNegrita := c.negrita.Value, NotaEspacios := c.espacios.Value
     NotaColor := color, NotaFondo := fondo
     GuardarEstiloNota()
-    Reconstruir("Nota guardada · Ctrl+Alt+T para mostrar / ocultar")
+    ActualizarNota("Nota guardada · Ctrl+Alt+T para mostrar / ocultar")
 }
