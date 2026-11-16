@@ -2107,7 +2107,7 @@ ActualizarNota(mensaje) {
         diferencia := EspacioNota(AltoNota(Escala)) - EspacioNota(altoAnterior)
         DestruirPanelNota()
         if diferencia {
-            ; Conserva los controles y las imágenes del teclado y actualiza su posición.
+            ; Mueve los controles sin repintarlos mientras aún se superponen.
             for _, tecla in Teclas
                 DesplazarControlNota(tecla.pic, diferencia)
             if PartesMouse.Has("dibujo")
@@ -2117,7 +2117,7 @@ ActualizarNota(mensaje) {
             GuiH += diferencia
             if Visible && !Minimizado {
                 pos := CalcularPosicion(GuiW, GuiH)
-                ; Actualiza el rectángulo sin ocultar ni activar el mostrador.
+                ; Aplica las nuevas dimensiones antes de repintar el mostrador.
                 DllCall("SetWindowPos", "ptr", overlay.Hwnd, "ptr", 0, "int", pos[1], "int", pos[2],
                     "int", GuiW, "int", GuiH, "uint", 0x14) ; NOZORDER | NOACTIVATE
             }
@@ -2125,14 +2125,20 @@ ActualizarNota(mensaje) {
         CrearNota()
         AgregarAlHistorial(mensaje)
         PosicionarPanelNota()
+        if diferencia && Visible && !Minimizado {
+            ; Borra los restos de las posiciones anteriores y repinta fondo y teclas.
+            DllCall("RedrawWindow", "ptr", overlay.Hwnd, "ptr", 0, "ptr", 0,
+                "uint", 0x185) ; INVALIDATE | ERASE | ALLCHILDREN | UPDATENOW
+        }
     } finally {
         Critical criticoAnterior
     }
 }
 
 DesplazarControlNota(control, diferencia) {
-    control.GetPos(, &y)
-    control.Move(, y + diferencia)
+    control.GetPos(&x, &y)
+    DllCall("SetWindowPos", "ptr", control.Hwnd, "ptr", 0, "int", x, "int", y + diferencia,
+        "int", 0, "int", 0, "uint", 0x1D) ; NOSIZE | NOZORDER | NOREDRAW | NOACTIVATE
 }
 
 PosicionarPanelNota() {
