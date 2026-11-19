@@ -95,6 +95,7 @@ global NotaNegrita := Integer(IniRead(ArchivoConfig, "Notas", "Negrita", "1"))
 global NotaEspacios := Integer(IniRead(ArchivoConfig, "Notas", "Espacios", "0"))
 global NotaColor := LeerColorTema("Notas", "Color", "FFF4CC", "F1F1F1")
 global NotaFondo := LeerColorTema("Notas", "Fondo", "182438", "181818")
+global NotaFondoTeclado := Integer(IniRead(ArchivoConfig, "Notas", "FondoTeclado", "1"))
 global NotaContraida := Integer(IniRead(ArchivoConfig, "Notas", "Contraida", "0"))
 global PanelNota := 0, NotaEditor := 0, NotaEstado := 0
 global NotaEditando := false, NotaGuardada := NotaTexto
@@ -2126,7 +2127,7 @@ GuardarNotaDirecta(*) {
         FileMove(ArchivoNota ".tmp", ArchivoNota, true)
         NotaGuardada := NotaTexto
         if IsObject(NotaEstado)
-            NotaEstado.Text := "NOTA · guardada"
+            NotaEstado.Text := "Nota · guardada"
         return true
     } catch as err {
         if IsObject(NotaEstado)
@@ -2147,20 +2148,21 @@ DestruirPanelNota() {
 
 CrearNota() {
     global overlay, Escala, NotaTam, NotaFuente, NotaColor, NotaFondo, NotaNegrita, NotaTexto, NotaEspacios
-    global PanelNota, NotaEditor, NotaEditando, NotaContraida, NotaEstado, U, GuiW
+    global PanelNota, NotaEditor, NotaEditando, NotaContraida, NotaEstado, U, GuiW, Col, NotaFondoTeclado
     h := AltoNota(Escala)
     if !h
         return
     w := GuiW - 2 * Round(U * 0.3)
     g := Gui("+AlwaysOnTop -Caption +ToolWindow -DPIScale +Owner" overlay.Hwnd, "Nota de clase")
-    g.BackColor := "363636"
+    g.BackColor := "303030"
+    fondoNota := NotaFondoTeclado ? Col.fondo : NotaFondo
     g.MarginX := 0, g.MarginY := 0
     if NotaContraida {
         ; Sólo la pestaña asoma por detrás del borde superior del mostrador.
         w := Min(w, Max(80, Round(120 * Escala * A_ScreenDPI / 96)))
         g.Opt("+E0x08000000")
         g.SetFont("s" Pt(Max(10, h * 0.55)) " cD6D6D6", "Segoe UI")
-        pestana := g.AddText(Format("x1 y1 w{} h{} Center +0x200 +0x100 Background272727", w - 2, h - 1), "▴  NOTA")
+        pestana := g.AddText(Format("x1 y1 w{} h{} Center +0x200 +0x100 Background{}", w - 2, h - 1, Col.fondo), "▴  NOTA")
         pestana.OnEvent("Click", ContraerNota)
         g.OnEvent("Close", (*) => OcultarNotaDirecta())
         RedondearNota(g, w, h, Max(6, Round(h * 0.5)))
@@ -2171,34 +2173,35 @@ CrearNota() {
     pad := Max(7, Round(12 * Escala * A_ScreenDPI / 96))
     tam := cab - 2 * Max(5, Round(cab * 0.15))
     separacion := Max(4, Round(U * 0.14))
-    yBarra := h - cab
-    g.AddText(Format("x1 y1 w{} h{} Background{}", w - 2, h - 2, NotaFondo))
-    g.AddText(Format("x1 y{} w{} h{} Background202020", yBarra, w - 2, cab - 1))
-    g.AddText(Format("x{} y{} w3 h{} BackgroundFF334D", pad, yBarra + (cab - tam) // 2, tam))
-    g.SetFont("s" Pt(Max(10, tam * 0.43)) " cBDBDBD", "Segoe UI")
+    g.AddText(Format("x1 y1 w{} h{} Background{}", w - 2, h - 2, fondoNota))
+    g.AddText(Format("x1 y1 w{} h{} Background{}", w - 2, cab - 1, Col.fondo))
+    g.AddText(Format("x1 y{} w{} h1 Background272727", cab - 1, w - 2))
+    g.SetFont("s" Pt(Max(10, tam * 0.43)) " cAAAAAA", "Segoe UI")
     anchoBotones := 6 * (tam + separacion)
-    NotaEstado := g.AddText(Format("x{} y{} w{} h{} +0x200 Background202020", pad + 10,
-        yBarra, Max(20, w - anchoBotones - 2 * pad - 10), cab), NotaEditando ? "NOTA · editando" : "NOTA")
-    acciones := [[NotaEditando ? "✓" : "✎", (*) => EditarNotaDirecta()],
-        ["A−", (*) => CambiarLetraNota(-2)], ["A+", (*) => CambiarLetraNota(2)],
-        [NotaContraida ? "▾" : "−", (*) => ContraerNota()],
-        ["×", (*) => OcultarNotaDirecta()], ["⚙", (*) => AbrirNotas()]]
+    NotaEstado := g.AddText(Format("x{} y1 w{} h{} +0x200 Background{}", pad,
+        Max(20, w - anchoBotones - 2 * pad), cab - 2, Col.fondo), NotaEditando ? "Nota · editando" : "Nota")
+    ; Glifos de Windows. Minimizar y cerrar ocupan el extremo superior derecho.
+    acciones := [[NotaEditando ? Chr(0xE74E) : Chr(0xE70F), (*) => EditarNotaDirecta(), "Segoe MDL2 Assets"],
+        ["A−", (*) => CambiarLetraNota(-2), "Segoe UI"],
+        ["A+", (*) => CambiarLetraNota(2), "Segoe UI"],
+        [Chr(0xE713), (*) => AbrirNotas(), "Segoe MDL2 Assets"],
+        [Chr(0xE921), (*) => ContraerNota(), "Segoe MDL2 Assets"],
+        [Chr(0xE8BB), (*) => OcultarNotaDirecta(), "Segoe MDL2 Assets"]]
     for i, accion in acciones {
-        fondo := i = 1 ? "45232B" : "303030"
-        tinta := i = 1 ? "FF899A" : "EAEAEA"
-        g.SetFont("s" Pt(tam * 0.56) " c" tinta " norm", "Segoe UI")
+        tinta := i = 1 && NotaEditando ? "FF899A" : "D6D6D6"
+        g.SetFont("s" Pt(tam * 0.48) " c" tinta " norm", accion[3])
         boton := g.AddText(Format("x{} y{} w{} h{} Center +0x200 +0x100 Background{}",
-            w - pad - (7 - i) * (tam + separacion), yBarra + (cab - tam) // 2, tam, tam, fondo), accion[1])
+            w - pad - (7 - i) * (tam + separacion), (cab - tam) // 2, tam, tam, Col.fondo), accion[1])
         boton.OnEvent("Click", accion[2])
     }
     if !NotaContraida {
         g.SetFont("s" Max(6, Round(NotaTam * Escala)) " c" NotaColor (NotaNegrita ? " bold" : " norm"), NotaFuente)
-        opts := Format("x{} y{} w{} h{}", pad, pad, w - 2 * pad, Max(1, yBarra - 2 * pad))
+        opts := Format("x{} y{} w{} h{}", pad, cab + pad, w - 2 * pad, Max(1, h - cab - 2 * pad))
         if NotaEditando {
-            NotaEditor := g.AddEdit(opts " Multi WantTab Limit0 -E0x200 -Border Background" NotaFondo, NotaTexto)
+            NotaEditor := g.AddEdit(opts " Multi WantTab Limit0 -E0x200 -Border Background" fondoNota, NotaTexto)
             NotaEditor.OnEvent("Change", NotaModificada)
         } else {
-            lectura := g.AddText(opts " +0x80 +0x100 Background" NotaFondo, TextoNotaVisible(NotaTexto, NotaEspacios))
+            lectura := g.AddText(opts " +0x80 +0x100 Background" fondoNota, TextoNotaVisible(NotaTexto, NotaEspacios))
             lectura.OnEvent("DoubleClick", (*) => EditarNotaDirecta())
         }
     }
@@ -2251,7 +2254,7 @@ PosicionarPanelNota() {
 NotaModificada(*) {
     global NotaEstado
     if IsObject(NotaEstado)
-        NotaEstado.Text := "NOTA · editando"
+        NotaEstado.Text := "Nota · editando"
     SetTimer(GuardarNotaDirecta, -500)
 }
 
@@ -2324,8 +2327,8 @@ OcultarNotaDirecta(*) {
 
 GuardarEstiloNota() {
     global ArchivoConfig, NotaMostrar, NotaFuente, NotaTam, NotaLineas, NotaNegrita, NotaEspacios, NotaColor, NotaFondo
-    global NotaContraida
-    for k, v in Map("Contraida", NotaContraida, "Mostrar", NotaMostrar, "Fuente", NotaFuente, "Tamano", NotaTam, "Lineas", NotaLineas,
+    global NotaContraida, NotaFondoTeclado
+    for k, v in Map("FondoTeclado", NotaFondoTeclado, "Contraida", NotaContraida, "Mostrar", NotaMostrar, "Fuente", NotaFuente, "Tamano", NotaTam, "Lineas", NotaLineas,
         "Negrita", NotaNegrita, "Espacios", NotaEspacios, "Color", NotaColor, "Fondo", NotaFondo)
         IniWrite(v, ArchivoConfig, "Notas", k)
 }
@@ -2356,7 +2359,7 @@ CerrarNotas(*) {
 AbrirNotas() {
     FinalizarEdicionNota()
     global NotasGui, CamposNotas, NotaMostrar, NotaTexto, NotaFuente, NotaTam, NotaLineas
-    global NotaNegrita, NotaEspacios, NotaColor, NotaFondo, Redimension
+    global NotaNegrita, NotaEspacios, NotaColor, NotaFondo, Redimension, NotaFondoTeclado
     if IsObject(Redimension)
         return
     if IsObject(NotasGui) {
@@ -2385,19 +2388,21 @@ AbrirNotas() {
     negrita := g.AddCheckbox("x18 y310 w220 h26", "Negrita")
     negrita.Value := NotaNegrita
     color := CampoColorMouse(g, 352, "Color del texto", NotaColor)
-    fondo := CampoColorMouse(g, 392, "Color del fondo", NotaFondo)
+    fondo := CampoColorMouse(g, 392, "Fondo personalizado", NotaFondo)
     espacios := g.AddCheckbox("x18 y436 w500 h26", "Marcar espacios (·) y tabulaciones (→)")
     espacios.Value := NotaEspacios
     g.AddText("x18 y480 w245 h25", "Altura del panel (líneas)")
     lineas := g.AddEdit("x280 y476 w70 Number", NotaLineas)
     g.AddUpDown("Range1-8", NotaLineas)
-    g.AddText("x18 y520 w500 h58", "Las fuentes monoespaciadas distinguen cada carácter. Si el texto no cabe, aumenta la altura o reduce el tamaño. Aplicar conserva exactamente los espacios y saltos de línea.")
+    g.AddText("x18 y520 w500 h36", "Si el texto no cabe, aumenta la altura o reduce el tamaño. Se conservan los espacios y saltos de línea.")
+    fondoTeclado := g.AddCheckbox("x18 y562 w500 h24", "Usar el mismo fondo del teclado")
+    fondoTeclado.Value := NotaFondoTeclado
     g.AddButton("x260 y594 w130 h32 Default", "Aplicar").OnEvent("Click", AplicarNota)
     g.AddButton("x400 y594 w118 h32", "Cerrar").OnEvent("Click", CerrarNotas)
     g.OnEvent("Close", CerrarNotas)
     g.OnEvent("Escape", CerrarNotas)
     CamposNotas := {mostrar: mostrar, texto: texto, fuente: fuente, tam: tam, negrita: negrita,
-        color: color, fondo: fondo, espacios: espacios, lineas: lineas}
+        color: color, fondo: fondo, espacios: espacios, lineas: lineas, fondoTeclado: fondoTeclado}
     AplicarTemaAjustes(g)
     g.Show("w538 h644")
     texto.Focus()
@@ -2405,7 +2410,7 @@ AbrirNotas() {
 
 AplicarNota(*) {
     global CamposNotas, NotasGui, ArchivoNota, NotaMostrar, NotaTexto, NotaFuente, NotaTam, NotaLineas
-    global NotaNegrita, NotaEspacios, NotaColor, NotaFondo, Redimension, NotaGuardada, NotaEditando
+    global NotaNegrita, NotaEspacios, NotaColor, NotaFondo, Redimension, NotaGuardada, NotaEditando, NotaFondoTeclado
     if IsObject(Redimension) || !GuardarNotaDirecta()
         return
     c := CamposNotas
@@ -2429,7 +2434,7 @@ AplicarNota(*) {
     NotaMostrar := c.mostrar.Value, NotaFuente := c.fuente.Text
     NotaTam := Max(10, Min(48, Integer(c.tam.Value))), NotaLineas := Max(1, Min(8, Integer(c.lineas.Value)))
     NotaNegrita := c.negrita.Value, NotaEspacios := c.espacios.Value
-    NotaColor := color, NotaFondo := fondo
+    NotaColor := color, NotaFondo := fondo, NotaFondoTeclado := c.fondoTeclado.Value
     GuardarEstiloNota()
     ActualizarNota("Nota guardada · Ctrl+Alt+T para mostrar / ocultar")
 }

@@ -210,3 +210,8 @@ los colores elegidos en ajustes, y sigue expandiéndose hacia arriba.
 Al contraer la nota, sólo asoma una pequeña pestaña **▴ NOTA** centrada sobre el
 mostrador. Púlsala para desplegar la tarjeta hacia arriba. La barra de edición
 completa aparece con la tarjeta abierta.
+
+Las notas abiertas tienen los controles en la esquina superior derecha, con
+iconos de Windows y minimizar y cerrar al extremo derecho. Su fondo se sincroniza
+con el teclado por defecto. Para elegir otro color, desmarca **Usar el mismo fondo
+del teclado** en los ajustes de la nota y cambia **Fondo personalizado**.
