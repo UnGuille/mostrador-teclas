@@ -117,6 +117,8 @@ global AnotColores := Map(), AnotArrastre := Map(), AnotEstado := 0, AnotGrosorT
 global AnotDeshacerBoton := 0, AnotRehacerBoton := 0, AnotBorrarBoton := 0
 global AnotHistorial := [], AnotRehacer := []
 global AnotTextoGui := 0, AnotTextoCampos := 0, AnotTextoPunto := 0, AnotTextoPendiente := false
+global AnotArrastreTexto := 0, AnotTextoEdicion := 0, AnotTextoSeleccionado := 0
+global AnotUltimoTexto := 0, AnotUltimoClick := 0, AnotUltimoPunto := 0
 global AnotGrosorEtiqueta := 0
 global AnotTextoTam := Max(10, Min(96, Integer(IniRead(ArchivoConfig, "Anotaciones", "TextoTam", "24"))))
 global AnotTextoNegrita := Integer(IniRead(ArchivoConfig, "Anotaciones", "TextoNegrita", "1"))
@@ -132,6 +134,7 @@ global AnotDuracion := Max(0, Min(60, Integer(IniRead(ArchivoConfig, "Anotacione
 try {
     OnExit(CerrarMostrador)
     OnMessage(0x0201, PresionarAnotacion)
+    OnMessage(0x0203, PresionarAnotacion)
     OnMessage(0x0200, MoverAnotacion)
     OnMessage(0x0202, SoltarAnotacion)
     OnMessage(0x0204, DerechoAnotacion)
@@ -2088,6 +2091,7 @@ CerrarMostrador(*) {
     global CerrandoMostrador, HwndTeclado, overlay, ih, HistorialBitmap, Redimension
     CerrandoMostrador := true
     OnMessage(0x0201, PresionarAnotacion, 0)
+    OnMessage(0x0203, PresionarAnotacion, 0)
     OnMessage(0x0200, MoverAnotacion, 0)
     OnMessage(0x0202, SoltarAnotacion, 0)
     OnMessage(0x0204, DerechoAnotacion, 0)
@@ -2699,12 +2703,16 @@ AlternarAnotaciones(*) {
 }
 
 FinalizarAnotaciones(*) {
-    global AnotModo, AnotActual, AnotCaptura, AnotBarra, AnotHwndCaptura, AnotTextoPendiente
+    global AnotModo, AnotActual, AnotCaptura, AnotBarra, AnotHwndCaptura, AnotTextoPendiente, AnotTextoEdicion, AnotDuracion
     criticoAnterior := A_IsCritical
     Critical "On"
     try {
         SetTimer(AbrirTextoAnotacion, 0)
         AnotTextoPendiente := false
+        CancelarMovimientoTextoAnotacion()
+        if IsObject(AnotTextoEdicion)
+            AnotTextoEdicion.vence := AnotDuracion ? A_TickCount + AnotDuracion * 1000 : 0
+        AnotTextoEdicion := 0
         AnotModo := false, AnotActual := 0
         if AnotHwndCaptura && DllCall("GetCapture", "ptr") = AnotHwndCaptura
             DllCall("ReleaseCapture")
@@ -2847,7 +2855,7 @@ CambiarGrosorAnotacion(delta, *) {
 ActualizarPaletaAnotaciones() {
     global AnotBotones, AnotColores, AnotHerramienta, AnotColor, AnotEstado, AnotDuracion, AnotGrosor
     global AnotGrosorTexto, AnotDeshacerBoton, AnotRehacerBoton, AnotBorrarBoton
-    global AnotHistorial, AnotRehacer, AnotActual, AnotTrazos, AnotTextoTam, AnotGrosorEtiqueta
+    global AnotHistorial, AnotRehacer, AnotActual, AnotTrazos, AnotTextoTam, AnotGrosorEtiqueta, AnotArrastreTexto
     for clave, boton in AnotBotones {
         boton.Opt("Background" (clave = AnotHerramienta ? "45232B" : "232323"))
         boton.SetFont("c" (clave = AnotHerramienta ? "FF96A8" : "D6D6D6"))
@@ -2864,11 +2872,11 @@ ActualizarPaletaAnotaciones() {
         AnotEstado.Text := nombres[AnotHerramienta] " · " (AnotDuracion ? AnotDuracion " s" : "Borrado manual")
     }
     if IsObject(AnotDeshacerBoton)
-        AnotDeshacerBoton.Enabled := AnotHistorial.Length > 0 || IsObject(AnotActual)
+        AnotDeshacerBoton.Enabled := AnotHistorial.Length > 0 || IsObject(AnotActual) || IsObject(AnotArrastreTexto)
     if IsObject(AnotRehacerBoton)
         AnotRehacerBoton.Enabled := AnotRehacer.Length > 0
     if IsObject(AnotBorrarBoton)
-        AnotBorrarBoton.Enabled := AnotTrazos.Length > 0 || IsObject(AnotActual)
+        AnotBorrarBoton.Enabled := AnotTrazos.Length > 0 || IsObject(AnotActual) || IsObject(AnotArrastreTexto)
 }
 
 RegistrarCambioAnotacion(antes) {
@@ -2879,6 +2887,8 @@ RegistrarCambioAnotacion(antes) {
 }
 
 CancelarTrazoAnotacion() {
+    if CancelarMovimientoTextoAnotacion()
+        return true
     global AnotActual, AnotHwndCaptura
     if !IsObject(AnotActual)
         return false
@@ -2909,7 +2919,8 @@ RehacerAnotacion(*) {
 }
 
 RestaurarDibujosAnotacion(dibujos) {
-    global AnotTrazos, AnotDuracion
+    global AnotTrazos, AnotDuracion, AnotTextoSeleccionado, AnotUltimoTexto
+    AnotTextoSeleccionado := 0, AnotUltimoTexto := 0
     AnotTrazos := dibujos.Clone()
     for trazo in AnotTrazos
         trazo.vence := AnotDuracion ? A_TickCount + AnotDuracion * 1000 : 0
@@ -2918,8 +2929,9 @@ RestaurarDibujosAnotacion(dibujos) {
 }
 
 BorrarAnotaciones(*) {
-    global AnotTrazos
+    global AnotTrazos, AnotTextoSeleccionado, AnotUltimoTexto
     CancelarTrazoAnotacion()
+    AnotTextoSeleccionado := 0, AnotUltimoTexto := 0
     if !AnotTrazos.Length
         return
     antes := AnotTrazos.Clone()
@@ -2939,60 +2951,92 @@ PuntoAnotacion() {
 PresionarAnotacion(wParam, lParam, msg, hwnd) {
     global AnotModo, AnotHwndCaptura, AnotActual, AnotHerramienta, AnotColor, AnotGrosor, AnotBarra, AnotArrastre
     global AnotTextoPunto, AnotTextoPendiente
-    if AnotModo && (AnotBarra is Gui) && AnotArrastre.Has(hwnd) {
-        DllCall("ReleaseCapture")
-        PostMessage(0x00A1, 2, 0, , AnotBarra)
+    criticoAnterior := A_IsCritical
+    Critical "On"
+    try {
+        if AnotModo && (AnotBarra is Gui) && AnotArrastre.Has(hwnd) {
+            DllCall("ReleaseCapture")
+            PostMessage(0x00A1, 2, 0, , AnotBarra)
+            return 0
+        }
+        if !AnotModo || hwnd != AnotHwndCaptura
+            return
+        if IniciarInteraccionTextoAnotacion(msg)
+            return 0
+        if AnotHerramienta = "texto" {
+            AnotTextoPunto := PuntoAnotacion()
+            AnotTextoPendiente := true
+            SetTimer(AbrirTextoAnotacion, -20)
+            return 0
+        }
+        AnotActual := {herramienta: AnotHerramienta, puntos: [PuntoAnotacion()], color: AnotColor,
+            grosor: Max(2, Round(AnotGrosor * A_ScreenDPI / 96)), vence: 0}
+        DllCall("SetCapture", "ptr", AnotHwndCaptura)
+        ActualizarPaletaAnotaciones()
+        SolicitarPintadoAnotaciones()
         return 0
+    } finally {
+        Critical criticoAnterior
     }
-    if !AnotModo || hwnd != AnotHwndCaptura
-        return
-    if AnotHerramienta = "texto" {
-        AnotTextoPunto := PuntoAnotacion()
-        AnotTextoPendiente := true
-        SetTimer(AbrirTextoAnotacion, -20)
-        return 0
-    }
-    AnotActual := {herramienta: AnotHerramienta, puntos: [PuntoAnotacion()], color: AnotColor,
-        grosor: Max(2, Round(AnotGrosor * A_ScreenDPI / 96)), vence: 0}
-    DllCall("SetCapture", "ptr", AnotHwndCaptura)
-    ActualizarPaletaAnotaciones()
-    SolicitarPintadoAnotaciones()
-    return 0
 }
 
 MoverAnotacion(wParam, lParam, msg, hwnd) {
-    global AnotModo, AnotHwndCaptura, AnotActual
-    if !AnotModo || hwnd != AnotHwndCaptura || !IsObject(AnotActual)
-        return
-    punto := PuntoAnotacion(), puntos := AnotActual.puntos
-    if AnotActual.herramienta = "trazo" {
-        previo := puntos[puntos.Length]
-        if Abs(punto[1] - previo[1]) + Abs(punto[2] - previo[2]) < 2
+    global AnotModo, AnotHwndCaptura, AnotActual, AnotArrastreTexto
+    criticoAnterior := A_IsCritical
+    Critical "On"
+    try {
+        if !AnotModo || hwnd != AnotHwndCaptura
             return
-        puntos.Push(punto)
-    } else if puntos.Length = 1 {
-        puntos.Push(punto)
-    } else {
-        puntos[2] := punto
+        if IsObject(AnotArrastreTexto) {
+            MoverTextoAnotacion()
+            return 0
+        }
+        if !IsObject(AnotActual)
+            return
+        punto := PuntoAnotacion(), puntos := AnotActual.puntos
+        if AnotActual.herramienta = "trazo" {
+            previo := puntos[puntos.Length]
+            if Abs(punto[1] - previo[1]) + Abs(punto[2] - previo[2]) < 2
+                return
+            puntos.Push(punto)
+        } else if puntos.Length = 1 {
+            puntos.Push(punto)
+        } else {
+            puntos[2] := punto
+        }
+        SolicitarPintadoAnotaciones()
+        return 0
+    } finally {
+        Critical criticoAnterior
     }
-    SolicitarPintadoAnotaciones()
-    return 0
 }
 
 SoltarAnotacion(wParam, lParam, msg, hwnd) {
-    global AnotHwndCaptura, AnotActual, AnotTrazos, AnotDuracion
-    if hwnd != AnotHwndCaptura || !IsObject(AnotActual)
-        return
-    MoverAnotacion(wParam, lParam, msg, hwnd)
-    AnotActual.vence := AnotDuracion ? A_TickCount + AnotDuracion * 1000 : 0
-    antes := AnotTrazos.Clone()
-    AnotTrazos.Push(AnotActual)
-    AnotActual := 0
-    RegistrarCambioAnotacion(antes)
-    if DllCall("GetCapture", "ptr") = AnotHwndCaptura
-        DllCall("ReleaseCapture")
-    SolicitarPintadoAnotaciones()
-    return 0
+    global AnotHwndCaptura, AnotActual, AnotTrazos, AnotDuracion, AnotArrastreTexto
+    criticoAnterior := A_IsCritical
+    Critical "On"
+    try {
+        if hwnd != AnotHwndCaptura
+            return
+        if IsObject(AnotArrastreTexto) {
+            TerminarMovimientoTextoAnotacion()
+            return 0
+        }
+        if !IsObject(AnotActual)
+            return
+        MoverAnotacion(wParam, lParam, msg, hwnd)
+        AnotActual.vence := AnotDuracion ? A_TickCount + AnotDuracion * 1000 : 0
+        antes := AnotTrazos.Clone()
+        AnotTrazos.Push(AnotActual)
+        AnotActual := 0
+        RegistrarCambioAnotacion(antes)
+        if DllCall("GetCapture", "ptr") = AnotHwndCaptura
+            DllCall("ReleaseCapture")
+        SolicitarPintadoAnotaciones()
+        return 0
+    } finally {
+        Critical criticoAnterior
+    }
 }
 
 DerechoAnotacion(wParam, lParam, msg, hwnd) {
@@ -3004,9 +3048,11 @@ DerechoAnotacion(wParam, lParam, msg, hwnd) {
 }
 
 CursorAnotacion(wParam, lParam, msg, hwnd) {
-    global AnotModo, AnotHwndCaptura, AnotHerramienta
+    global AnotModo, AnotHwndCaptura, AnotHerramienta, AnotArrastreTexto, AnotActual
     if AnotModo && hwnd = AnotHwndCaptura {
-        cursor := DllCall("LoadCursorW", "ptr", 0, "ptr", AnotHerramienta = "texto" ? 32513 : 32515, "ptr")
+        sobreTexto := IsObject(AnotArrastreTexto) || (!IsObject(AnotActual) && TextoAnotacionEnPunto(PuntoAnotacion()))
+        tipoCursor := sobreTexto ? 32646 : AnotHerramienta = "texto" ? 32513 : 32515
+        cursor := DllCall("LoadCursorW", "ptr", 0, "ptr", tipoCursor, "ptr")
         DllCall("SetCursor", "ptr", cursor)
         return 1
     }
@@ -3014,16 +3060,16 @@ CursorAnotacion(wParam, lParam, msg, hwnd) {
 
 
 ExpirarAnotaciones() {
-    global AnotTrazos, AnotActual, AnotModo, AnotHwndCaptura, AnotTextoGui, AnotTextoPendiente
+    global AnotTrazos, AnotActual, AnotModo, AnotHwndCaptura, AnotTextoGui, AnotTextoPendiente, AnotArrastreTexto
     criticoAnterior := A_IsCritical
     Critical "On"
     try {
         ; También termina el trazo si el botón se soltó sobre la barra de herramientas.
-        if IsObject(AnotActual) && !GetKeyState("LButton", "P")
+        if (IsObject(AnotActual) || IsObject(AnotArrastreTexto)) && !GetKeyState("LButton", "P")
             SoltarAnotacion(0, 0, 0, AnotHwndCaptura)
         nuevas := [], cambio := false
         for trazo in AnotTrazos {
-            if trazo.vence && A_TickCount >= trazo.vence
+            if trazo.vence && A_TickCount >= trazo.vence && !TextoAnotacionOcupado(trazo)
                 cambio := true
             else
                 nuevas.Push(trazo)
@@ -3050,7 +3096,7 @@ SolicitarPintadoAnotaciones() {
 
 PintarAnotaciones() {
     global AnotPendiente, AnotLienzo, AnotPic, AnotDC, AnotBitmap, AnotW, AnotH
-    global AnotClave, AnotTrazos, AnotActual, AnotColor
+    global AnotClave, AnotTrazos, AnotActual, AnotColor, AnotModo, AnotTextoSeleccionado
     criticoAnterior := A_IsCritical
     Critical "On"
     try {
@@ -3082,6 +3128,8 @@ PintarAnotaciones() {
                 PintarTrazoAnotacion(AnotDC, trazo)
             if IsObject(AnotActual)
                 PintarTrazoAnotacion(AnotDC, AnotActual)
+            if AnotModo && IndiceTextoAnotacion(AnotTextoSeleccionado)
+                PintarSeleccionTextoAnotacion(AnotDC, AnotTextoSeleccionado)
         } finally {
             DllCall("DeleteObject", "ptr", pincel)
             DllCall("SelectObject", "ptr", AnotDC, "ptr", anterior)
@@ -3144,12 +3192,14 @@ CerrarAnotaciones(*) {
     global AnotModo, AnotHwndCaptura, AnotLienzo, AnotCaptura, AnotBarra, AnotDC, AnotBitmap
     global AnotActual, AnotTrazos, AnotPendiente, AnotPic, AnotBotones, AnotHistorial, AnotRehacer
     global AnotColores, AnotArrastre, AnotEstado, AnotGrosorTexto, AnotDeshacerBoton, AnotRehacerBoton, AnotBorrarBoton, AnotGrosorEtiqueta
+    global AnotArrastreTexto, AnotTextoSeleccionado, AnotUltimoTexto
     criticoAnterior := A_IsCritical
     Critical "On"
     try {
         SetTimer(PintarAnotaciones, 0)
         SetTimer(ExpirarAnotaciones, 0)
         CerrarTextoAnotacion()
+        AnotArrastreTexto := 0, AnotTextoSeleccionado := 0, AnotUltimoTexto := 0
         if AnotHwndCaptura && DllCall("GetCapture", "ptr") = AnotHwndCaptura
             DllCall("ReleaseCapture")
         AnotModo := false, AnotHwndCaptura := 0, AnotActual := 0, AnotTrazos := [], AnotPendiente := false
@@ -3250,7 +3300,7 @@ EditorTextoAnotacionActivo() {
 
 AbrirTextoAnotacion() {
     global AnotTextoPendiente, AnotTextoPunto, AnotTextoGui, AnotTextoCampos, AnotModo
-    global AnotTextoTam, AnotTextoNegrita, AnotColor, AnotX, AnotY
+    global AnotTextoTam, AnotTextoNegrita, AnotColor, AnotX, AnotY, AnotTextoEdicion
     if !AnotTextoPendiente || !AnotModo
         return
     if GetKeyState("LButton", "P") {
@@ -3260,28 +3310,34 @@ AbrirTextoAnotacion() {
     criticoAnterior := A_IsCritical
     Critical "On"
     try {
+        edicion := AnotTextoEdicion
+        tamInicial := IsObject(edicion) ? edicion.tam : AnotTextoTam
+        negritaInicial := IsObject(edicion) ? edicion.negrita : AnotTextoNegrita
+        colorInicial := IsObject(edicion) ? edicion.color : AnotColor
+        contenido := IsObject(edicion) ? edicion.texto : ""
         FinalizarAnotaciones()
+        AnotTextoEdicion := edicion
         g := Gui("+AlwaysOnTop -Caption +ToolWindow -DPIScale", "Texto · Anotaciones")
         AnotTextoGui := g
         g.BackColor := "0F0F0F"
         escala := A_ScreenDPI / 96
         g.SetFont("s11 cF1F1F1", "Segoe UI")
-        g.AddText(Format("x{} y{} w{} h{} +0x200", Round(16 * escala), Round(10 * escala), Round(310 * escala), Round(26 * escala)), "Escribe tu texto")
-        g.AddText(Format("x{} y{} w{} h{} Background{}", Round(370 * escala), Round(18 * escala), Round(16 * escala), Round(16 * escala), AnotColor))
+        g.AddText(Format("x{} y{} w{} h{} +0x200", Round(16 * escala), Round(10 * escala), Round(310 * escala), Round(26 * escala)), IsObject(edicion) ? "Editar texto" : "Escribe tu texto")
+        g.AddText(Format("x{} y{} w{} h{} Background{}", Round(370 * escala), Round(18 * escala), Round(16 * escala), Round(16 * escala), colorInicial))
         BotonPaletaAnotacion(g, Chr(0xE8BB), 400, 10, 24, 26, CancelarTextoAnotacion, "232323", "D6D6D6", "Segoe MDL2 Assets")
         g.SetFont("s12 cF1F1F1 norm", "Segoe UI")
         texto := g.AddEdit(Format("x{} y{} w{} h{} Multi WantTab Limit0 -E0x200 -Border Background181818",
-            Round(16 * escala), Round(48 * escala), Round(408 * escala), Round(114 * escala)))
+            Round(16 * escala), Round(48 * escala), Round(408 * escala), Round(114 * escala)), contenido)
         g.SetFont("s9 cAAAAAA", "Segoe UI")
         g.AddText(Format("x{} y{} w{} h{} +0x200", Round(16 * escala), Round(174 * escala), Round(50 * escala), Round(26 * escala)), "Letra")
         g.SetFont("s10 cF1F1F1", "Segoe UI")
-        tam := g.AddEdit(Format("x{} y{} w{} h{} Number Background232323", Round(70 * escala), Round(174 * escala), Round(64 * escala), Round(26 * escala)), AnotTextoTam)
-        g.AddUpDown("Range10-96", AnotTextoTam)
+        tam := g.AddEdit(Format("x{} y{} w{} h{} Number Background232323", Round(70 * escala), Round(174 * escala), Round(64 * escala), Round(26 * escala)), tamInicial)
+        g.AddUpDown("Range10-96", tamInicial)
         negrita := g.AddCheckbox(Format("x{} y{} w{} h{}", Round(150 * escala), Round(174 * escala), Round(100 * escala), Round(26 * escala)), "Negrita")
-        negrita.Value := AnotTextoNegrita
+        negrita.Value := negritaInicial
         g.SetFont("s9 c999999", "Segoe UI")
         g.AddText(Format("x{} y{} w{} h{} +0x200", Round(16 * escala), Round(214 * escala), Round(220 * escala), Round(26 * escala)), "Ctrl + Enter para insertar")
-        BotonPaletaAnotacion(g, "Insertar", 250, 212, 80, 28, InsertarTextoAnotacion, "45232B", "FF96A8")
+        BotonPaletaAnotacion(g, IsObject(edicion) ? "Guardar" : "Insertar", 250, 212, 80, 28, InsertarTextoAnotacion, "45232B", "FF96A8")
         BotonPaletaAnotacion(g, "Cancelar", 340, 212, 84, 28, CancelarTextoAnotacion)
         AnotTextoCampos := {texto: texto, tam: tam, negrita: negrita}
         g.OnEvent("Escape", CancelarTextoAnotacion)
@@ -3292,6 +3348,7 @@ AbrirTextoAnotacion() {
         pos := PosicionEnPantalla(AnotX + AnotTextoPunto[1], AnotY + AnotTextoPunto[2], ancho, alto)
         g.Show(Format("x{} y{} w{} h{}", pos[1], pos[2], ancho, alto))
         texto.Focus()
+        SendMessage(0xB1, -1, -1, texto)
     } finally {
         Critical criticoAnterior
     }
@@ -3302,13 +3359,16 @@ CancelarTextoAnotacion(*) {
 }
 
 CerrarTextoAnotacion(continuar := false) {
-    global AnotTextoGui, AnotTextoCampos, AnotTextoPendiente, AnotModo, AnotCaptura, AnotBarra, CerrandoMostrador
+    global AnotTextoGui, AnotTextoCampos, AnotTextoPendiente, AnotModo, AnotCaptura, AnotBarra, CerrandoMostrador, AnotTextoEdicion, AnotDuracion
     criticoAnterior := A_IsCritical
     Critical "On"
     try {
         SetTimer(AbrirTextoAnotacion, 0)
         AnotTextoPendiente := false
         ventanaTexto := AnotTextoGui
+        if IsObject(AnotTextoEdicion)
+            AnotTextoEdicion.vence := AnotDuracion ? A_TickCount + AnotDuracion * 1000 : 0
+        AnotTextoEdicion := 0
         AnotTextoGui := 0, AnotTextoCampos := 0
         if ventanaTexto is Gui
             ventanaTexto.Destroy()
@@ -3325,7 +3385,7 @@ CerrarTextoAnotacion(continuar := false) {
 }
 
 InsertarTextoAnotacion(*) {
-    global AnotTextoCampos, AnotTextoTam, AnotTextoNegrita, AnotTextoPunto, AnotColor, AnotDuracion, AnotTrazos
+    global AnotTextoCampos, AnotTextoTam, AnotTextoNegrita, AnotTextoPunto, AnotColor, AnotDuracion, AnotTrazos, AnotTextoEdicion, AnotTextoSeleccionado
     criticoAnterior := A_IsCritical
     Critical "On"
     try {
@@ -3343,13 +3403,19 @@ InsertarTextoAnotacion(*) {
         }
         tam := Max(10, Min(96, Integer(c.tam.Value)))
         trazo := {herramienta: "texto", texto: texto, puntos: [AnotTextoPunto.Clone()], tam: tam,
-            negrita: c.negrita.Value, color: AnotColor, vence: 0}
+            negrita: c.negrita.Value, color: IsObject(AnotTextoEdicion) ? AnotTextoEdicion.color : AnotColor, vence: 0}
         PrepararTextoAnotacion(trazo)
         AnotTextoTam := tam, AnotTextoNegrita := c.negrita.Value
         GuardarAnotacionesConfig()
         trazo.vence := AnotDuracion ? A_TickCount + AnotDuracion * 1000 : 0
         antes := AnotTrazos.Clone()
-        AnotTrazos.Push(trazo)
+        indice := IndiceTextoAnotacion(AnotTextoEdicion)
+        if indice
+            AnotTrazos[indice] := trazo
+        else
+            AnotTrazos.Push(trazo)
+        AnotTextoSeleccionado := trazo
+        AnotTextoEdicion := 0
         RegistrarCambioAnotacion(antes)
         CerrarTextoAnotacion(true)
         SolicitarPintadoAnotaciones()
@@ -3418,5 +3484,162 @@ PintarTextoAnotacion(dc, trazo) {
     } finally {
         DllCall("SelectObject", "ptr", dc, "ptr", previa)
         DllCall("DeleteObject", "ptr", fuente)
+    }
+}
+
+IndiceTextoAnotacion(referencia) {
+    global AnotTrazos
+    if !IsObject(referencia)
+        return 0
+    dibujos := AnotTrazos
+    for i, trazo in dibujos
+        if trazo == referencia
+            return i
+    return 0
+}
+
+TextoAnotacionEnPunto(punto) {
+    global AnotTrazos
+    dibujos := AnotTrazos
+    margen := Max(4, Round(4 * A_ScreenDPI / 96))
+    Loop dibujos.Length {
+        i := dibujos.Length + 1 - A_Index
+        trazo := dibujos[i]
+        if trazo.herramienta != "texto"
+            continue
+        origen := trazo.puntos[1]
+        if punto[1] >= origen[1] - margen && punto[1] <= origen[1] + trazo.ancho + margen
+            && punto[2] >= origen[2] - margen && punto[2] <= origen[2] + trazo.alto + margen
+            return i
+    }
+    return 0
+}
+
+IniciarInteraccionTextoAnotacion(msg) {
+    global AnotTrazos, AnotArrastreTexto, AnotTextoSeleccionado, AnotHwndCaptura
+    global AnotUltimoTexto, AnotUltimoClick, AnotUltimoPunto
+    global AnotTextoEdicion, AnotTextoPunto, AnotTextoPendiente
+    punto := PuntoAnotacion()
+    indice := TextoAnotacionEnPunto(punto)
+    if !indice {
+        AnotTextoSeleccionado := 0, AnotUltimoTexto := 0
+        SolicitarPintadoAnotaciones()
+        return false
+    }
+    original := AnotTrazos[indice]
+    AnotTextoSeleccionado := original
+    margen := Max(4, Round(4 * A_ScreenDPI / 96))
+    doble := msg = 0x0203 || (IsObject(AnotUltimoTexto) && AnotUltimoTexto == original
+        && A_TickCount - AnotUltimoClick <= DllCall("GetDoubleClickTime", "uint")
+        && Abs(punto[1] - AnotUltimoPunto[1]) <= margen && Abs(punto[2] - AnotUltimoPunto[2]) <= margen)
+    if doble {
+        AnotUltimoTexto := 0, AnotArrastreTexto := 0
+        AnotTextoEdicion := original
+        AnotTextoPunto := original.puntos[1].Clone()
+        AnotTextoPendiente := true
+        SetTimer(AbrirTextoAnotacion, -20)
+    } else {
+        copia := original.Clone()
+        copia.puntos := [original.puntos[1].Clone()]
+        AnotArrastreTexto := {original: original, copia: copia, punto: punto, origen: original.puntos[1].Clone(),
+            antes: AnotTrazos.Clone(), movido: false, inicio: A_TickCount}
+        DllCall("SetCapture", "ptr", AnotHwndCaptura)
+    }
+    ActualizarPaletaAnotaciones()
+    SolicitarPintadoAnotaciones()
+    return true
+}
+
+MoverTextoAnotacion() {
+    global AnotArrastreTexto, AnotTextoSeleccionado, AnotTrazos, AnotW, AnotH
+    if !IsObject(AnotArrastreTexto)
+        return
+    movimiento := AnotArrastreTexto
+    punto := PuntoAnotacion()
+    dx := punto[1] - movimiento.punto[1], dy := punto[2] - movimiento.punto[2]
+    if !movimiento.movido && Abs(dx) + Abs(dy) < Max(4, Round(4 * A_ScreenDPI / 96))
+        return
+    referencia := movimiento.movido ? movimiento.copia : movimiento.original
+    indice := IndiceTextoAnotacion(referencia)
+    if !indice
+        return
+    ; La copia evita modificar los objetos guardados en el historial de deshacer.
+    movimiento.copia.puntos[1] := [Max(0, Min(movimiento.origen[1] + dx, AnotW - movimiento.copia.ancho)),
+        Max(0, Min(movimiento.origen[2] + dy, AnotH - movimiento.copia.alto))]
+    AnotTrazos[indice] := movimiento.copia
+    movimiento.movido := true
+    AnotTextoSeleccionado := movimiento.copia
+    SolicitarPintadoAnotaciones()
+}
+
+TerminarMovimientoTextoAnotacion() {
+    global AnotArrastreTexto, AnotTextoSeleccionado, AnotHwndCaptura, AnotDuracion
+    global AnotUltimoTexto, AnotUltimoClick, AnotUltimoPunto
+    if !IsObject(AnotArrastreTexto)
+        return
+    MoverTextoAnotacion()
+    movimiento := AnotArrastreTexto
+    AnotArrastreTexto := 0
+    if DllCall("GetCapture", "ptr") = AnotHwndCaptura
+        DllCall("ReleaseCapture")
+    AnotTextoSeleccionado := movimiento.movido ? movimiento.copia : movimiento.original
+    AnotTextoSeleccionado.vence := AnotDuracion ? A_TickCount + AnotDuracion * 1000 : 0
+    if movimiento.movido {
+        AnotUltimoTexto := 0
+        RegistrarCambioAnotacion(movimiento.antes)
+    } else {
+        AnotUltimoTexto := movimiento.original
+        AnotUltimoClick := movimiento.inicio
+        AnotUltimoPunto := movimiento.punto
+    }
+    ActualizarPaletaAnotaciones()
+    SolicitarPintadoAnotaciones()
+}
+
+CancelarMovimientoTextoAnotacion() {
+    global AnotArrastreTexto, AnotTextoSeleccionado, AnotTrazos, AnotHwndCaptura, AnotDuracion
+    criticoAnterior := A_IsCritical
+    Critical "On"
+    try {
+        if !IsObject(AnotArrastreTexto)
+            return false
+        movimiento := AnotArrastreTexto
+        AnotArrastreTexto := 0
+        if movimiento.movido {
+            indice := IndiceTextoAnotacion(movimiento.copia)
+            if indice
+                AnotTrazos[indice] := movimiento.original
+        }
+        AnotTextoSeleccionado := movimiento.original
+        movimiento.original.vence := AnotDuracion ? A_TickCount + AnotDuracion * 1000 : 0
+        if DllCall("GetCapture", "ptr") = AnotHwndCaptura
+            DllCall("ReleaseCapture")
+        ActualizarPaletaAnotaciones()
+        SolicitarPintadoAnotaciones()
+        return true
+    } finally {
+        Critical criticoAnterior
+    }
+}
+
+TextoAnotacionOcupado(trazo) {
+    global AnotArrastreTexto, AnotTextoEdicion
+    if IsObject(AnotTextoEdicion) && trazo == AnotTextoEdicion
+        return true
+    return IsObject(AnotArrastreTexto) && (trazo == AnotArrastreTexto.original || trazo == AnotArrastreTexto.copia)
+}
+
+PintarSeleccionTextoAnotacion(dc, trazo) {
+    margen := Max(4, Round(4 * A_ScreenDPI / 96))
+    x := trazo.puntos[1][1], y := trazo.puntos[1][2]
+    lapiz := DllCall("CreatePen", "int", 2, "int", 1, "uint", BGR("8AB4F8"), "ptr")
+    previo := DllCall("SelectObject", "ptr", dc, "ptr", lapiz, "ptr")
+    pincel := DllCall("SelectObject", "ptr", dc, "ptr", DllCall("GetStockObject", "int", 5, "ptr"), "ptr")
+    try DllCall("Rectangle", "ptr", dc, "int", x - margen, "int", y - margen,
+        "int", x + trazo.ancho + margen, "int", y + trazo.alto + margen)
+    finally {
+        DllCall("SelectObject", "ptr", dc, "ptr", pincel)
+        DllCall("SelectObject", "ptr", dc, "ptr", previo)
+        DllCall("DeleteObject", "ptr", lapiz)
     }
 }

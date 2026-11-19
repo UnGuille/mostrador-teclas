@@ -268,3 +268,17 @@ configurada. El tiempo empieza al insertarla. Puedes deshacerla, rehacerla o bor
 como cualquier otro dibujo. Cerca del borde se ajusta su posición para mantenerla
 visible en la pantalla donde pulsaste. El tamaño y la negrita también se guardan
 desde los ajustes de anotaciones.
+
+
+### Mover y editar textos insertados
+
+Dentro del modo de anotaciones, **arrastra un texto** para moverlo y haz **doble clic**
+para editarlo. Funciona con cualquier herramienta seleccionada. Al pasar el cursor
+sobre un texto aparece el cursor de movimiento. Un marco azul punteado distingue
+el texto seleccionado.
+
+El editor recupera su contenido, tamaño y negrita. **Guardar** o **Ctrl + Enter**
+aplica los cambios al mismo texto; **Esc** cancela la edición. Los movimientos y
+ediciones se pueden deshacer y rehacer. Mientras arrastras o editas un texto se
+pausa su caducidad, y al terminar se renueva su duración. Fuera del modo de
+anotaciones, las marcas siguen dejando pasar los clics hacia las aplicaciones.
