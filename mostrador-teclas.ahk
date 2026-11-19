@@ -52,11 +52,11 @@ global MargenY        := Integer(IniRead(ArchivoConfig, "Teclado", "MargenY", "2
 
 ; Colores (RRGGBB)
 global Col := {
-    fondo: "141414", tecla: "2F2F2F", texto: "F2F2F2", shift: "BDBDBD",
-    altgr: "5AB0FF", especial: "D0D0D0",
-    normal: "FFD21F", normalTxt: "111111",
-    mod: "E3262B", modTxt: "FFFFFF",
-    barra: "00FF90", previo: "8A8A8A"
+    fondo: "0F0F0F", tecla: "272727", texto: "F1F1F1", shift: "AAAAAA",
+    altgr: "8AB4F8", especial: "D6D6D6",
+    normal: "FFC857", normalTxt: "181818",
+    mod: "FF334D", modTxt: "FFFFFF",
+    barra: "F1F1F1", previo: "909090"
 }
 
 global ResplandorMouse := Integer(IniRead(ArchivoConfig, "Mouse", "Resplandor", "1"))
@@ -66,10 +66,10 @@ global HaloMouse := 0, HaloDC := 0, HaloBitmap := 0, HaloAnterior := 0
 global HaloTam := Max(40, Min(240, Integer(IniRead(ArchivoConfig, "Mouse", "HaloTam", "88"))))
 global HaloColor := ColorMouseValido(IniRead(ArchivoConfig, "Mouse", "HaloColor", "FFD600"), "FFD600")
 global HaloOpacidad := Max(5, Min(85, Integer(IniRead(ArchivoConfig, "Mouse", "HaloOpacidad", "35"))))
-global MouseCuerpo := ColorMouseValido(IniRead(ArchivoConfig, "Mouse", "ColorCuerpo", "B6BEC7"), "B6BEC7")
-global MouseBotones := ColorMouseValido(IniRead(ArchivoConfig, "Mouse", "ColorBotones", "E5E9ED"), "E5E9ED")
-global MousePulsado := ColorMouseValido(IniRead(ArchivoConfig, "Mouse", "ColorPulsado", "FFD21F"), "FFD21F")
-global MouseRueda := ColorMouseValido(IniRead(ArchivoConfig, "Mouse", "ColorRueda", "5AB0FF"), "5AB0FF")
+global MouseCuerpo := LeerColorTema("Mouse", "ColorCuerpo", "B6BEC7", "383838")
+global MouseBotones := LeerColorTema("Mouse", "ColorBotones", "E5E9ED", "606060")
+global MousePulsado := LeerColorTema("Mouse", "ColorPulsado", "FFD21F", "FF334D")
+global MouseRueda := LeerColorTema("Mouse", "ColorRueda", "5AB0FF", "8AB4F8")
 global HaloX := "", HaloY := ""
 
 ; ---------------- ESTADO ----------------
@@ -92,8 +92,8 @@ global NotaTam := Max(10, Min(48, Integer(IniRead(ArchivoConfig, "Notas", "Taman
 global NotaLineas := Max(1, Min(8, Integer(IniRead(ArchivoConfig, "Notas", "Lineas", "3"))))
 global NotaNegrita := Integer(IniRead(ArchivoConfig, "Notas", "Negrita", "1"))
 global NotaEspacios := Integer(IniRead(ArchivoConfig, "Notas", "Espacios", "0"))
-global NotaColor := ColorMouseValido(IniRead(ArchivoConfig, "Notas", "Color", "FFF4CC"), "FFF4CC")
-global NotaFondo := ColorMouseValido(IniRead(ArchivoConfig, "Notas", "Fondo", "182438"), "182438")
+global NotaColor := LeerColorTema("Notas", "Color", "FFF4CC", "F1F1F1")
+global NotaFondo := LeerColorTema("Notas", "Fondo", "182438", "181818")
 global NotaContraida := Integer(IniRead(ArchivoConfig, "Notas", "Contraida", "0"))
 global PanelNota := 0, NotaEditor := 0, NotaEstado := 0
 global NotaEditando := false, NotaGuardada := NotaTexto
@@ -334,7 +334,7 @@ Construir() {
             overlay.SetFont("s" Pt(U * 0.45) " c" Col.barra " bold", "Segoe UI")
             txtCombo := overlay.AddText(Format("x{} y{} w{} h{} +0x200 +0x80", pad, overlay.MarginY, Round(14 * U) - 3 * TamBotonMinimizar() - Round(U * 0.25), Round(U * 0.8)))
             txtPrev := 0
-            WinSetTransparent(245, overlay)
+            WinSetTransparent(255, overlay)
             return
         }
         HistorialW := Round(14 * U), HistorialH := Round(3.8 * U)
@@ -343,7 +343,7 @@ Construir() {
         CrearNota()
         HistorialPic := overlay.AddText(Format("x{} y{} w{} h{} +0xE", overlay.MarginX, overlay.MarginY, HistorialW, HistorialH))
         txtCombo := 0, txtPrev := 0
-        WinSetTransparent(245, overlay)
+        WinSetTransparent(255, overlay)
         return
     }
 
@@ -414,7 +414,7 @@ Construir() {
     if MostrarMouse
         ConstruirMouseVisual(pad + anchoTec + Round(U * 0.4), top + Round(U * 0.5))
 
-    WinSetTransparent(245, overlay)
+    WinSetTransparent(255, overlay)
 }
 
 Leg(x, y, w, h, texto, px, negrita, rol, align) {
@@ -496,8 +496,8 @@ DibujarTecla(w, h, estado, legs, fotograma := 0) {
     altoCara := h - profundidad
     r := Max(4, Round(U * 0.16))
     colorTecla := (estado = "mod") ? Col.mod : (estado = "normal") ? Col.normal : Col.tecla
-    borde := hundida ? "101010" : (estado = "mod") ? "FF7276" : (estado = "normal") ? "FFF19A" : "606060"
-    base := (estado = "mod") ? "831B22" : (estado = "normal") ? "96700A" : "4B5563"
+    borde := hundida ? "181818" : (estado = "mod") ? "FF6B7D" : (estado = "normal") ? "FFE1A0" : "414141"
+    base := (estado = "mod") ? "781F2E" : (estado = "normal") ? "735621" : "181818"
     RectTecla(hdc, 0, profundidad, w, h, r, base)
     RectTecla(hdc, 0, desplazamiento, w, desplazamiento + altoCara, r, borde)
     bisel := Max(1, Round(U * 0.035))
@@ -1193,32 +1193,32 @@ DibujarMouse(w, h, estado) {
     forma := [56,7, 17,7,9,17,7,53, 3,91,2,140,13,164,
         21,183,39,185,56,185, 78,185,94,181,101,162,
         111,135,108,88,105,53, 102,17,94,7,56,7]
-    MouseCurva(dc, sx, sy, forma, "33383E", "080A0C", 2)
+    MouseCurva(dc, sx, sy, forma, "272727", "0A0A0A", 2)
     MouseCurva(dc, sx, sy, [56,11, 23,11,14,21,12,53,
         10,66,9,79,9,89, 26,84,42,83,56,83,
-        56,60,56,34,56,11], (estado & 1) ? MousePulsado : MouseBotones, "161A20", 1.6)
+        56,60,56,34,56,11], (estado & 1) ? MousePulsado : MouseBotones, "121212", 1.6)
     MouseCurva(dc, sx, sy, [56,11, 89,11,98,21,100,53,
         102,66,103,79,103,89, 86,84,70,83,56,83,
-        56,60,56,34,56,11], (estado & 2) ? MousePulsado : MouseBotones, "161A20", 1.6)
+        56,60,56,34,56,11], (estado & 2) ? MousePulsado : MouseBotones, "121212", 1.6)
     ; Panel de palma, con una curva que une ambos botones.
     MouseCurva(dc, sx, sy, [9,94, 38,86,74,86,103,94,
         105,119,104,145,97,162, 91,177,76,180,56,180,
-        36,180,21,177,15,162, 8,145,7,119,9,94], MouseCuerpo, "161A20", 1.6)
+        36,180,21,177,15,162, 8,145,7,119,9,94], MouseCuerpo, "121212", 1.6)
     ; Rueda central con surcos. Se ilumina al pulsar o desplazar.
-    rueda := (estado & 4) ? MousePulsado : (estado & 24) ? MouseRueda : "555F6A"
+    rueda := (estado & 4) ? MousePulsado : (estado & 24) ? MouseRueda : "303030"
     MouseCurva(dc, sx, sy, [56,29, 48,29,47,34,47,40,
         47,47,47,56,47,62, 47,70,50,73,56,73,
         62,73,65,70,65,62, 65,56,65,47,65,40,
-        65,34,64,29,56,29], rueda, "101419", 2)
+        65,34,64,29,56,29], rueda, "121212", 2)
     Loop 5 {
         yy := 38 + A_Index * 5
-        MouseLinea(dc, sx, sy, 51, yy, 61, yy, "909AA4", 0.7)
+        MouseLinea(dc, sx, sy, 51, yy, 61, yy, "B3B3B3", 0.7)
     }
     ; Flechas discretas: azul indica el sentido de desplazamiento.
-    MouseLinea(dc, sx, sy, 52,24,56,20, (estado & 8) ? MouseRueda : "707983", 1.6)
-    MouseLinea(dc, sx, sy, 56,20,60,24, (estado & 8) ? MouseRueda : "707983", 1.6)
-    MouseLinea(dc, sx, sy, 52,77,56,81, (estado & 16) ? MouseRueda : "707983", 1.6)
-    MouseLinea(dc, sx, sy, 56,81,60,77, (estado & 16) ? MouseRueda : "707983", 1.6)
+    MouseLinea(dc, sx, sy, 52,24,56,20, (estado & 8) ? MouseRueda : "909090", 1.6)
+    MouseLinea(dc, sx, sy, 56,20,60,24, (estado & 8) ? MouseRueda : "909090", 1.6)
+    MouseLinea(dc, sx, sy, 52,77,56,81, (estado & 16) ? MouseRueda : "909090", 1.6)
+    MouseLinea(dc, sx, sy, 56,81,60,77, (estado & 16) ? MouseRueda : "909090", 1.6)
     salida := DllCall("CreateCompatibleDC", "ptr", dc, "ptr")
     previo := DllCall("SelectObject", "ptr", salida, "ptr", bmp, "ptr")
     DllCall("SetStretchBltMode", "ptr", salida, "int", 4)
@@ -1574,14 +1574,14 @@ PintarGrupoHistorial(dc, grupo, x, y, maxW, alto, px) {
         w := Max(1, Floor(parte.w * factor))
         if (parte.tipo = "tecla" || parte.tipo = "mod") {
             esMod := parte.tipo = "mod"
-            borde := esMod ? "B99AE8" : "57D1C7"
-            fondo := esMod ? "42305D" : "174A50"
-            tinta := esMod ? "F2E5FF" : "D2FFF6"
+            borde := esMod ? "AC8CC4" : "6FADB2"
+            fondo := esMod ? "33283E" : "203638"
+            tinta := esMod ? "E9DDF5" : "D8ECEB"
             RectTecla(dc, x, y, x + w, y + alto, Max(4, Round(U * 0.13)), borde)
             RectTecla(dc, x + 1, y + 1, x + w - 1, y + alto - 1, Max(3, Round(U * 0.11)), fondo)
             TextoHistorial(dc, parte.texto, x + 2, y, w - 4, alto, px, tinta, true)
         } else {
-            tinta := parte.tipo = "resultado" ? "A8D8EF" : "A8B6CC"
+            tinta := parte.tipo = "resultado" ? "C2D2E8" : "AAAAAA"
             TextoHistorial(dc, parte.texto, x, y, w, alto, px, tinta, true)
         }
         x += w + Floor(grupo.gap * factor)
@@ -1597,20 +1597,20 @@ DibujarHistorial(w, h, vertical := false) {
     old := DllCall("SelectObject", "ptr", dc, "ptr", bmp, "ptr")
     rc := Buffer(16, 0)
     NumPut("int", w, rc, 8), NumPut("int", h, rc, 12)
-    br := DllCall("CreateSolidBrush", "uint", BGR("141414"), "ptr")
+    br := DllCall("CreateSolidBrush", "uint", BGR("0F0F0F"), "ptr")
     DllCall("FillRect", "ptr", dc, "ptr", rc, "ptr", br)
     DllCall("DeleteObject", "ptr", br)
-    RectTecla(dc, 0, 0, w, h, Round(U * 0.2), "354156")
-    RectTecla(dc, 1, 1, w - 1, h - 1, Round(U * 0.2), "1B2330")
+    RectTecla(dc, 0, 0, w, h, Round(U * 0.2), "373737")
+    RectTecla(dc, 1, 1, w - 1, h - 1, Round(U * 0.2), "181818")
     pad := Max(4, Round(U * 0.18))
     cab := Round(U * 0.42), alto := Round(U * 0.62)
     px := Max(9, Round(U * 0.27))
     etiqueta := "RECIENTES  ·  hasta 4 teclas →"
-    TextoHistorial(dc, etiqueta, pad, 1, w - 2 * pad, cab, Max(8, Round(U * 0.21)), "A8B6CC")
+    TextoHistorial(dc, etiqueta, pad, 1, w - 2 * pad, cab, Max(8, Round(U * 0.21)), "AAAAAA")
     n := Historial.Length
     if !n {
         TextoHistorial(dc, "Pulsa una tecla o un atajo para comenzar", pad, cab,
-            w - 2 * pad, alto, px, "A8B6CC")
+            w - 2 * pad, alto, px, "AAAAAA")
     } else if vertical {
         for i, entrada in Historial {
             grupo := MedirGrupoHistorial(dc, entrada, px)
@@ -1634,7 +1634,7 @@ DibujarHistorial(w, h, vertical := false) {
         }
         x := pad
         if omitidas {
-            TextoHistorial(dc, "…", x, cab, Round(U * 0.4), alto, px, "A8B6CC")
+            TextoHistorial(dc, "…", x, cab, Round(U * 0.4), alto, px, "AAAAAA")
             x += Round(U * 0.5)
         }
         for i, grupo in grupos {
@@ -1642,14 +1642,14 @@ DibujarHistorial(w, h, vertical := false) {
             PintarGrupoHistorial(dc, grupo, x, cab, espacio, alto, px)
             x += espacio
             if i < grupos.Length {
-                TextoHistorial(dc, "›", x, cab, separacion, alto, px, "7E91AB", true)
+                TextoHistorial(dc, "›", x, cab, separacion, alto, px, "808080", true)
                 x += separacion
             }
         }
     }
     if (vertical && AvisoActual != "")
         TextoHistorial(dc, AvisoActual, pad, h - Round(U * 0.43), w - 2 * pad,
-            Round(U * 0.36), Max(8, Round(U * 0.22)), "A8D8EF")
+            Round(U * 0.36), Max(8, Round(U * 0.22)), "C2D2E8")
     DllCall("SelectObject", "ptr", dc, "ptr", old)
     DllCall("DeleteDC", "ptr", dc)
     return bmp
@@ -1722,14 +1722,15 @@ CrearControlMinimizar() {
     ; Una ventana independiente permite pulsarlo incluso con el teclado bloqueado.
     ControlMinimizar := Gui("+AlwaysOnTop -Caption +ToolWindow -DPIScale +E0x08000000", "Minimizar mostrador")
     ControlMinimizar.MarginX := 0, ControlMinimizar.MarginY := 0
-    ControlMinimizar.BackColor := "243247"
-    ControlMinimizar.SetFont("s" Pt(17) " cDBEAFE", "Segoe UI Symbol")
+    ControlMinimizar.BackColor := "272727"
+    ControlMinimizar.SetFont("s" Pt(17) " cF1F1F1", "Segoe UI Symbol")
     BotonMinimizar := ControlMinimizar.AddText("x0 y0 w26 h26 Center +0x200 +0x100", "−")
     BotonMinimizar.OnEvent("Click", (*) => AlternarMinimizado())
     BotonAjustes := ControlMinimizar.AddText("x0 y0 w26 h26 Center +0x200 +0x100", "⚙")
     BotonAjustes.OnEvent("Click", (*) => AbrirAjustesMouse())
     BotonNotas := ControlMinimizar.AddText("x0 y0 w26 h26 Center +0x200 +0x100", "✎")
     BotonNotas.OnEvent("Click", (*) => EditarNotaDirecta())
+    BotonNotas.SetFont("cFF6B7D")
     ControlMinimizar.OnEvent("ContextMenu", (*) => AbrirAjustesMouse())
     ControlMinimizar.OnEvent("Close", (*) => AlternarMinimizado())
 }
@@ -1785,12 +1786,12 @@ ActualizarControlMinimizar() {
     BotonAjustes.Visible := !Minimizado
     if !Minimizado {
         BotonNotas.Move(0, 0, tam, tam)
-        BotonNotas.SetFont("s" Pt(tam * 0.65) " cDBEAFE", "Segoe UI Symbol")
+        BotonNotas.SetFont("s" Pt(tam * 0.65) " cFF6B7D", "Segoe UI Symbol")
         BotonAjustes.Move(tam + separacion, 0, tam, tam)
-        BotonAjustes.SetFont("s" Pt(tam * 0.65) " cDBEAFE", "Segoe UI Symbol")
+        BotonAjustes.SetFont("s" Pt(tam * 0.65) " cF1F1F1", "Segoe UI Symbol")
     }
     BotonMinimizar.Move(Minimizado ? 0 : 2 * (tam + separacion), 0, tam, tam)
-    BotonMinimizar.SetFont("s" Pt(tam * 0.65) " cDBEAFE", "Segoe UI Symbol")
+    BotonMinimizar.SetFont("s" Pt(tam * 0.65) " cF1F1F1", "Segoe UI Symbol")
     ControlMinimizar.Show(Format("x{} y{} w{} h{} NoActivate", x, y, ancho, tam))
     ControlMinimizar.Opt("+AlwaysOnTop")
 }
@@ -1822,6 +1823,32 @@ AlternarMinimizado() {
 ; AJUSTES DE AURA Y COLORES DEL MOUSE
 ; ============================================================
 
+LeerColorTema(seccion, clave, anterior, nuevo) {
+    global ArchivoConfig
+    color := ColorMouseValido(IniRead(ArchivoConfig, seccion, clave, nuevo), nuevo)
+    ; Actualiza los antiguos valores predeterminados al cargar las preferencias.
+    return color = anterior ? nuevo : color
+}
+
+AplicarTemaAjustes(g) {
+    g.BackColor := "0F0F0F"
+    oscuro := Buffer(4, 0)
+    NumPut("int", 1, oscuro)
+    try DllCall("dwmapi\DwmSetWindowAttribute", "ptr", g.Hwnd, "uint", 20, "ptr", oscuro, "uint", 4)
+    for control in g {
+        switch control.Type {
+            case "Edit", "DropDownList":
+                control.Opt("Background272727 cF1F1F1")
+            case "CheckBox":
+                control.Opt("cF1F1F1")
+            case "Button", "UpDown":
+                DllCall("uxtheme\SetWindowTheme", "ptr", control.Hwnd, "str", "DarkMode_Explorer", "ptr", 0)
+            case "Slider":
+                control.Opt("Background0F0F0F")
+        }
+    }
+}
+
 ColorMouseValido(valor, defecto := "") {
     valor := StrUpper(LTrim(Trim(valor), "#"))
     return RegExMatch(valor, "^[0-9A-F]{6}$") ? valor : defecto
@@ -1839,8 +1866,8 @@ AbrirAjustesMouse() {
     }
     g := Gui("+AlwaysOnTop +ToolWindow", "Ajustes del mouse y aura")
     AjustesMouseGui := g
-    g.SetFont("s10", "Segoe UI")
-    g.BackColor := "F4F6FA"
+    g.SetFont("s10 cF1F1F1", "Segoe UI")
+    g.BackColor := "0F0F0F"
     g.AddText("x18 y14 w475 h22", "AURA DEL CURSOR")
     activo := g.AddCheckbox("x18 y42 w465 h24", "Activar el resplandor que sigue al cursor")
     activo.Value := ResplandorMouse
@@ -1869,6 +1896,7 @@ AbrirAjustesMouse() {
         cuerpo: cuerpo, botones: botones, pulsado: pulsado, rueda: rueda}
     g.OnEvent("Close", CerrarAjustesMouse)
     g.OnEvent("Escape", CerrarAjustesMouse)
+    AplicarTemaAjustes(g)
     g.Show("w515 h524")
 }
 
@@ -1918,7 +1946,7 @@ RestablecerAjustesMouse() {
     c.activo.Value := 1, c.visible.Value := 1
     c.diametro.Value := 88, c.diamTexto.Text := "88 px"
     c.opacidad.Value := 35, c.opTexto.Text := "35%"
-    for nombre, color in Map("color", "FFD600", "cuerpo", "B6BEC7", "botones", "E5E9ED", "pulsado", "FFD21F", "rueda", "5AB0FF") {
+    for nombre, color in Map("color", "FFD600", "cuerpo", "383838", "botones", "606060", "pulsado", "FF334D", "rueda", "8AB4F8") {
         item := c.%nombre%
         item.campo.Text := color
         ActualizarMuestraMouse(item.campo, item.muestra)
@@ -2291,7 +2319,7 @@ AbrirNotas() {
     }
     g := Gui("+AlwaysOnTop", "Notas de clase · Mostrador de teclas")
     NotasGui := g
-    g.SetFont("s10", "Segoe UI")
+    g.SetFont("s10 cF1F1F1", "Segoe UI")
     g.AddText("x18 y14 w500 h26", "NOTA DE CLASE · texto independiente del historial")
     mostrar := g.AddCheckbox("x18 y46 w500 h26", "Mostrar nota encima del teclado")
     mostrar.Value := NotaTexto = "" ? 1 : NotaMostrar
@@ -2324,6 +2352,7 @@ AbrirNotas() {
     g.OnEvent("Escape", CerrarNotas)
     CamposNotas := {mostrar: mostrar, texto: texto, fuente: fuente, tam: tam, negrita: negrita,
         color: color, fondo: fondo, espacios: espacios, lineas: lineas}
+    AplicarTemaAjustes(g)
     g.Show("w538 h644")
     texto.Focus()
 }
