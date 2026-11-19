@@ -2105,7 +2105,7 @@ AltoNota(escala) {
     if !NotaMostrar
         return 0
     if NotaContraida
-        return CabeceraNota(escala)
+        return Max(16, Round(20 * A_ScreenDPI / 96 * escala))
     return CabeceraNota(escala) + Round((NotaTam * A_ScreenDPI / 72 * 1.45 * NotaLineas + 20 * A_ScreenDPI / 96) * escala)
 }
 
@@ -2155,6 +2155,18 @@ CrearNota() {
     g := Gui("+AlwaysOnTop -Caption +ToolWindow -DPIScale +Owner" overlay.Hwnd, "Nota de clase")
     g.BackColor := "363636"
     g.MarginX := 0, g.MarginY := 0
+    if NotaContraida {
+        ; Sólo la pestaña asoma por detrás del borde superior del mostrador.
+        w := Min(w, Max(80, Round(120 * Escala * A_ScreenDPI / 96)))
+        g.Opt("+E0x08000000")
+        g.SetFont("s" Pt(Max(10, h * 0.55)) " cD6D6D6", "Segoe UI")
+        pestana := g.AddText(Format("x1 y1 w{} h{} Center +0x200 +0x100 Background272727", w - 2, h - 1), "▴  NOTA")
+        pestana.OnEvent("Click", ContraerNota)
+        g.OnEvent("Close", (*) => OcultarNotaDirecta())
+        RedondearNota(g, w, h, Max(6, Round(h * 0.5)))
+        PanelNota := {gui: g, ancho: w, alto: h, offsetX: (GuiW - w) // 2}
+        return
+    }
     cab := CabeceraNota(Escala)
     pad := Max(7, Round(12 * Escala * A_ScreenDPI / 96))
     tam := cab - 2 * Max(5, Round(cab * 0.15))
@@ -2191,12 +2203,16 @@ CrearNota() {
         }
     }
     radio := Max(8, Round(14 * Escala * A_ScreenDPI / 96))
+    RedondearNota(g, w, h, radio)
+    g.OnEvent("Close", (*) => OcultarNotaDirecta())
+    g.OnEvent("Escape", (*) => FinalizarEdicionNota())
+    PanelNota := {gui: g, ancho: w, alto: h, offsetX: Round(U * 0.3)}
+}
+
+RedondearNota(g, w, h, radio) {
     region := DllCall("CreateRoundRectRgn", "int", 0, "int", 0, "int", w + 1, "int", h + 1, "int", radio, "int", radio, "ptr")
     if region && !DllCall("SetWindowRgn", "ptr", g.Hwnd, "ptr", region, "int", false)
         DllCall("DeleteObject", "ptr", region)
-    g.OnEvent("Close", (*) => OcultarNotaDirecta())
-    g.OnEvent("Escape", (*) => FinalizarEdicionNota())
-    PanelNota := {gui: g, ancho: w, alto: h}
 }
 
 ActualizarNota(mensaje) {
@@ -2213,7 +2229,7 @@ ActualizarNota(mensaje) {
 }
 
 PosicionarPanelNota() {
-    global PanelNota, Visible, Minimizado, overlay, Redimension, U
+    global PanelNota, Visible, Minimizado, overlay, Redimension
     criticoAnterior := A_IsCritical
     Critical "On"
     try {
@@ -2225,9 +2241,8 @@ PosicionarPanelNota() {
             return
         }
         overlay.GetPos(&x, &y)
-        pad := Round(U * 0.3)
-        ; Conserva el borde inferior de la nota al cambiar su altura.
-        panel.gui.Show(Format("x{} y{} w{} h{} NoActivate", x + pad, y - panel.alto, panel.ancho, panel.alto))
+        ; La pestaña se centra y la tarjeta abierta conserva el ancho del mostrador.
+        panel.gui.Show(Format("x{} y{} w{} h{} NoActivate", x + panel.offsetX, y - panel.alto, panel.ancho, panel.alto))
     } finally {
         Critical criticoAnterior
     }
@@ -2294,7 +2309,7 @@ ContraerNota(*) {
         return
     NotaEditando := false, NotaContraida := !NotaContraida
     GuardarEstiloNota()
-    ActualizarNota(NotaContraida ? "Nota minimizada · ▾ para expandir" : "Nota expandida")
+    ActualizarNota(NotaContraida ? "Nota guardada detrás · pulsa la pestaña NOTA" : "Nota expandida")
 }
 
 OcultarNotaDirecta(*) {

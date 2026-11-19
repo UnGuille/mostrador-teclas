@@ -149,7 +149,7 @@ La propia nota tiene estos controles:
 |---|---|
 | ✎ / ✓ | Editar el texto / terminar y guardar |
 | A− / A+ | Reducir / aumentar la letra en 2 puntos (entre 10 y 48) |
-| − / ▾ | Minimizar la nota a su barra / expandirla |
+| − / pestaña NOTA | Guardar la nota detrás del teclado / desplegarla |
 | × | Ocultar la nota sin borrarla |
 | ⚙ | Colores, fuente, negrita, altura y espacios visibles |
 
@@ -206,3 +206,7 @@ se procesa en memoria y las preferencias se guardan en `[Seleccion]` de `overlay
 Las notas usan una tarjeta de esquinas redondeadas, márgenes amplios y una barra
 grafito con botones de mayor tamaño. Su contenido conserva la fuente, el tamaño y
 los colores elegidos en ajustes, y sigue expandiéndose hacia arriba.
+
+Al contraer la nota, sólo asoma una pequeña pestaña **▴ NOTA** centrada sobre el
+mostrador. Púlsala para desplegar la tarjeta hacia arriba. La barra de edición
+completa aparece con la tarjeta abierta.
