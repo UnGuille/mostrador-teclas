@@ -98,6 +98,7 @@ global NotaFondo := LeerColorTema("Notas", "Fondo", "182438", "181818")
 global NotaFondoTeclado := Integer(IniRead(ArchivoConfig, "Notas", "FondoTeclado", "1"))
 global NotaContraida := Integer(IniRead(ArchivoConfig, "Notas", "Contraida", "0"))
 global PanelNota := 0, NotaEditor := 0, NotaEstado := 0
+global NotaAncho := 0, NotaAlto := 0, NotaOffsetX := 0
 global NotaEditando := false, NotaGuardada := NotaTexto
 global NotasGui := 0, CamposNotas := 0, BotonNotas := 0
 global AjustesMouseGui := 0, CamposMouse := 0, ColoresMousePersonalizados := Buffer(64, 0)
@@ -2137,18 +2138,26 @@ GuardarNotaDirecta(*) {
 }
 
 DestruirPanelNota() {
-    global PanelNota, NotaEditor, NotaEstado
-    GuardarNotaDirecta()
-    panel := PanelNota
-    ; Retirar la referencia antes de que Destroy dispare mensajes de ventana.
-    PanelNota := 0, NotaEditor := 0, NotaEstado := 0
-    if IsObject(panel)
-        panel.gui.Destroy()
+    global PanelNota, NotaEditor, NotaEstado, NotaAncho, NotaAlto, NotaOffsetX
+    criticoAnterior := A_IsCritical
+    Critical "On"
+    try {
+        GuardarNotaDirecta()
+        ventanaNota := PanelNota
+        ; Invalidar primero las referencias que pueden consultar los mensajes de Windows.
+        PanelNota := 0, NotaEditor := 0, NotaEstado := 0
+        NotaAncho := 0, NotaAlto := 0, NotaOffsetX := 0
+        if ventanaNota is Gui
+            ventanaNota.Destroy()
+    } finally {
+        Critical criticoAnterior
+    }
 }
 
 CrearNota() {
     global overlay, Escala, NotaTam, NotaFuente, NotaColor, NotaFondo, NotaNegrita, NotaTexto, NotaEspacios
     global PanelNota, NotaEditor, NotaEditando, NotaContraida, NotaEstado, U, GuiW, Col, NotaFondoTeclado
+    global NotaAncho, NotaAlto, NotaOffsetX
     h := AltoNota(Escala)
     if !h
         return
@@ -2166,7 +2175,8 @@ CrearNota() {
         pestana.OnEvent("Click", ContraerNota)
         g.OnEvent("Close", (*) => OcultarNotaDirecta())
         RedondearNota(g, w, h, Max(6, Round(h * 0.5)))
-        PanelNota := {gui: g, ancho: w, alto: h, offsetX: (GuiW - w) // 2}
+        NotaAncho := w, NotaAlto := h, NotaOffsetX := (GuiW - w) // 2
+        PanelNota := g
         return
     }
     cab := CabeceraNota(Escala)
@@ -2209,7 +2219,8 @@ CrearNota() {
     RedondearNota(g, w, h, radio)
     g.OnEvent("Close", (*) => OcultarNotaDirecta())
     g.OnEvent("Escape", (*) => FinalizarEdicionNota())
-    PanelNota := {gui: g, ancho: w, alto: h, offsetX: Round(U * 0.3)}
+    NotaAncho := w, NotaAlto := h, NotaOffsetX := Round(U * 0.3)
+    PanelNota := g
 }
 
 RedondearNota(g, w, h, radio) {
@@ -2232,20 +2243,22 @@ ActualizarNota(mensaje) {
 }
 
 PosicionarPanelNota() {
-    global PanelNota, Visible, Minimizado, overlay, Redimension
+    global PanelNota, Visible, Minimizado, overlay, Redimension, NotaAncho, NotaAlto, NotaOffsetX
     criticoAnterior := A_IsCritical
     Critical "On"
     try {
-        panel := PanelNota
-        if !IsObject(panel)
+        ventanaNota := PanelNota
+        if !(ventanaNota is Gui)
             return
         if !VentanaMostradorDisponible() || !Visible || Minimizado || IsObject(Redimension) {
-            panel.gui.Hide()
+            ventanaNota.Hide()
             return
         }
+        if NotaAncho <= 0 || NotaAlto <= 0
+            return
         overlay.GetPos(&x, &y)
         ; La pestaña se centra y la tarjeta abierta conserva el ancho del mostrador.
-        panel.gui.Show(Format("x{} y{} w{} h{} NoActivate", x + panel.offsetX, y - panel.alto, panel.ancho, panel.alto))
+        ventanaNota.Show(Format("x{} y{} w{} h{} NoActivate", x + NotaOffsetX, y - NotaAlto, NotaAncho, NotaAlto))
     } finally {
         Critical criticoAnterior
     }
@@ -2260,10 +2273,16 @@ NotaModificada(*) {
 
 FocoNota() {
     global PanelNota, NotaEditor, NotaEditando
-    if NotaEditando && IsObject(NotaEditor) {
-        PanelNota.gui.Show()
-        NotaEditor.Focus()
-        SendMessage(0xB1, -1, -1, NotaEditor) ; EM_SETSEL: cursor al final
+    criticoAnterior := A_IsCritical
+    Critical "On"
+    try {
+        if NotaEditando && (PanelNota is Gui) && IsObject(NotaEditor) {
+            PanelNota.Show()
+            NotaEditor.Focus()
+            SendMessage(0xB1, -1, -1, NotaEditor) ; EM_SETSEL: cursor al final
+        }
+    } finally {
+        Critical criticoAnterior
     }
 }
 
