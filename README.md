@@ -164,3 +164,9 @@ la lectura; al editar se muestra el texto original y se conservan todos los espa
 Para mantener la nota visible fuera de la edición, desactiva el ocultado automático
 con **Ctrl + Alt + H**. El contenido se guarda en `overlay-nota.txt` y la apariencia
 en `overlay-config.ini`; ambos son locales y están excluidos de Git.
+
+
+Si desconectas una pantalla extendida, el mostrador ajusta su posición a una pantalla
+disponible. También comprueba la posición guardada al abrirse. Puedes recuperarlo
+manualmente con **Ctrl izquierdo + Alt izquierdo + R**, que lo devuelve a la esquina
+inferior derecha de la pantalla principal y lo expande si estaba minimizado.

@@ -102,6 +102,8 @@ global AjustesMouseGui := 0, CamposMouse := 0, ColoresMousePersonalizados := Buf
 
 try {
     OnExit(CerrarMostrador)
+    OnMessage(0x007E, AlCambiarPantallas) ; WM_DISPLAYCHANGE
+    OnMessage(0x001A, AlCambiarPantallas) ; WM_SETTINGCHANGE
     OnMessage(0x0047, SeguirPosicionMostrador) ; WM_WINDOWPOSCHANGED
     OnMessage(0x0024, LimitesRedimension) ; WM_GETMINMAXINFO
     OnMessage(0x0083, AreaCompletaTeclado)  ; WM_NCCALCSIZE: borde sin marco visible
@@ -872,14 +874,17 @@ RestablecerPosicion() {
     global Redimension
     if IsObject(Redimension)
         return
-    global Anclaje, MargenX, MargenY, Visible, overlay
+    global Anclaje, MargenX, MargenY, overlay, GuiW, GuiH, Minimizado
     Anclaje := "BR"
     MargenX := 20
     MargenY := 20
     GuardarConfig()
-    overlay.Hide()
-    Visible := false
+    pos := CalcularPosicion(GuiW, GuiH)
+    overlay.Move(pos[1], pos[2])
+    if Minimizado
+        AlternarMinimizado()
     AgregarAlHistorial("Posición restablecida")
+    ActualizarControlMinimizar()
 }
 
 AlPresionarMouse(wParam, lParam, msg, hwnd) {
@@ -921,12 +926,53 @@ CalcularPosicion(w, h) {
     global Anclaje, MargenX, MargenY
     MonitorGetWorkArea(MonitorGetPrimary(), &L, &T, &R, &B)   ; sin la barra de tareas
     switch Anclaje {
-        case "XY": return [MargenX, MargenY]
-        case "TL": return [L + MargenX, T + MargenY]
-        case "TR": return [R - w - MargenX, T + MargenY]
-        case "BL": return [L + MargenX, B - h - MargenY]
-        default:   return [R - w - MargenX, B - h - MargenY]   ; "BR"
+        case "XY": pos := [MargenX, MargenY]
+        case "TL": pos := [L + MargenX, T + MargenY]
+        case "TR": pos := [R - w - MargenX, T + MargenY]
+        case "BL": pos := [L + MargenX, B - h - MargenY]
+        default:   pos := [R - w - MargenX, B - h - MargenY] ; BR
     }
+    segura := PosicionEnPantalla(pos[1], pos[2], w, h)
+    if Anclaje = "XY" && (segura[1] != MargenX || segura[2] != MargenY) {
+        MargenX := segura[1], MargenY := segura[2]
+        GuardarConfig()
+    }
+    return segura
+}
+
+PosicionEnPantalla(x, y, w, h) {
+    ; MonitorFromRect admite también pantallas situadas en coordenadas negativas.
+    rect := Buffer(16, 0)
+    NumPut("int", x, "int", y, "int", x + w, "int", y + h, rect)
+    monitor := DllCall("MonitorFromRect", "ptr", rect, "uint", 2, "ptr")
+    info := Buffer(40, 0)
+    NumPut("uint", 40, info)
+    if !DllCall("GetMonitorInfoW", "ptr", monitor, "ptr", info)
+        return [x, y]
+    l := NumGet(info, 20, "int"), t := NumGet(info, 24, "int")
+    r := NumGet(info, 28, "int"), b := NumGet(info, 32, "int")
+    return [Max(l, Min(x, r - w)), Max(t, Min(y, b - h))]
+}
+
+AlCambiarPantallas(wParam, lParam, msg, hwnd) {
+    global CerrandoMostrador
+    if CerrandoMostrador || (msg = 0x001A && wParam != 0x002F)
+        return
+    ; Esperar a que Windows termine de actualizar la distribución de pantallas.
+    SetTimer(ReubicarMostrador, -300)
+}
+
+ReubicarMostrador() {
+    global overlay, GuiW, GuiH, Redimension
+    if !VentanaMostradorDisponible()
+        return
+    if IsObject(Redimension) {
+        SetTimer(ReubicarMostrador, -300)
+        return
+    }
+    pos := CalcularPosicion(GuiW, GuiH)
+    overlay.Move(pos[1], pos[2])
+    ActualizarControlMinimizar()
 }
 
 GuardarConfig() {
@@ -1947,6 +1993,8 @@ CerrarMostrador(*) {
     CerrandoMostrador := true
     HwndTeclado := 0
     ; Desconectar primero: destruir las ventanas genera mas mensajes de Windows.
+    OnMessage(0x007E, AlCambiarPantallas, 0)
+    OnMessage(0x001A, AlCambiarPantallas, 0)
     OnMessage(0x0047, SeguirPosicionMostrador, 0)
     OnMessage(0x0024, LimitesRedimension, 0)
     OnMessage(0x0083, AreaCompletaTeclado, 0)
@@ -1959,7 +2007,7 @@ CerrarMostrador(*) {
     OnMessage(0x0005, ActualizarVistaRedimension, 0)
     OnMessage(0x0201, AlPresionarMouse, 0)
     OnMessage(0x0232, AlTerminarArrastre, 0)
-    for temporizador in [Tick, AnimarTeclas, ActualizarHaloMouse, TerminarRedimension]
+    for temporizador in [Tick, AnimarTeclas, ActualizarHaloMouse, TerminarRedimension, ReubicarMostrador]
         SetTimer(temporizador, 0)
     if IsSet(ih) && IsObject(ih)
         ih.Stop()
