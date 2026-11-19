@@ -2474,11 +2474,11 @@ ActualizarMenuSeleccion() {
 }
 
 AbrirMenuAjustes(*) {
-    menu := Menu()
-    menu.Add("Mouse y aura...", (*) => AbrirAjustesMouse())
-    menu.Add("Notas...", (*) => AbrirNotas())
-    menu.Add("Selección de texto...", (*) => AbrirAjustesSeleccion())
-    menu.Show()
+    menuAjustes := Menu()
+    menuAjustes.Add("Mouse y aura...", (*) => AbrirAjustesMouse())
+    menuAjustes.Add("Notas...", (*) => AbrirNotas())
+    menuAjustes.Add("Selección de texto...", (*) => AbrirAjustesSeleccion())
+    menuAjustes.Show()
 }
 
 AbrirAjustesSeleccion(*) {
