@@ -102,7 +102,7 @@ global NotaContraida := Integer(IniRead(ArchivoConfig, "Notas", "Contraida", "0"
 global PanelNota := 0, NotaEditor := 0, NotaEstado := 0
 global NotaAncho := 0, NotaAlto := 0, NotaOffsetX := 0
 global NotaEditando := false, NotaGuardada := NotaTexto
-global NotasGui := 0, CamposNotas := 0, BotonNotas := 0
+global NotasGui := 0, CamposNotas := 0, BotonNotas := 0, BotonAnotaciones := 0
 global AjustesMouseGui := 0, CamposMouse := 0, ColoresMousePersonalizados := Buffer(64, 0)
 global SeleccionActivo := Integer(IniRead(ArchivoConfig, "Seleccion", "Activo", "0"))
 global SeleccionFondo := ColorMouseValido(IniRead(ArchivoConfig, "Seleccion", "Fondo", "FFD600"), "FFD600")
@@ -113,10 +113,13 @@ global SeleccionNegrita := Integer(IniRead(ArchivoConfig, "Seleccion", "Negrita"
 global SeleccionPid := 0, AjustesSeleccionGui := 0, CamposSeleccion := 0
 global AnotModo := false, AnotLienzo := 0, AnotCaptura := 0, AnotBarra := 0, AnotPic := 0
 global AnotAjustes := 0, AnotCampos := 0, AnotHwndCaptura := 0, AnotBotones := Map()
+global AnotColores := Map(), AnotArrastre := Map(), AnotEstado := 0, AnotGrosorTexto := 0
+global AnotDeshacerBoton := 0, AnotRehacerBoton := 0, AnotBorrarBoton := 0
+global AnotHistorial := [], AnotRehacer := []
 global AnotDC := 0, AnotBitmap := 0, AnotClave := "000001", AnotPendiente := false
 global AnotX := 0, AnotY := 0, AnotW := 0, AnotH := 0, AnotActual := 0, AnotTrazos := []
 global AnotHerramienta := IniRead(ArchivoConfig, "Anotaciones", "Herramienta", "trazo")
-if !RegExMatch(AnotHerramienta, "^(trazo|flecha|ovalo)$")
+if !RegExMatch(AnotHerramienta, "^(trazo|flecha|ovalo|marco|linea)$")
     AnotHerramienta := "trazo"
 global AnotColor := ColorMouseValido(IniRead(ArchivoConfig, "Anotaciones", "Color", "FF334D"), "FF334D")
 global AnotGrosor := Max(2, Min(16, Integer(IniRead(ArchivoConfig, "Anotaciones", "Grosor", "4"))))
@@ -196,10 +199,13 @@ try {
 #HotIf AnotModo
 *Esc::FinalizarAnotaciones()
 ^z::DeshacerAnotacion()
+^y::RehacerAnotacion()
 Delete::BorrarAnotaciones()
 1::ElegirHerramientaAnotacion("trazo")
 2::ElegirHerramientaAnotacion("flecha")
 3::ElegirHerramientaAnotacion("ovalo")
+4::ElegirHerramientaAnotacion("marco")
+5::ElegirHerramientaAnotacion("linea")
 #HotIf
 
 Pt(px) => Max(6, Round(px * 72 / A_ScreenDPI))
@@ -373,7 +379,7 @@ Construir() {
             GuiH := Round(U * 0.8) + 2 * overlay.MarginY
             CrearNota()
             overlay.SetFont("s" Pt(U * 0.45) " c" Col.barra " bold", "Segoe UI")
-            txtCombo := overlay.AddText(Format("x{} y{} w{} h{} +0x200 +0x80", pad, overlay.MarginY, Round(14 * U) - 3 * TamBotonMinimizar() - Round(U * 0.25), Round(U * 0.8)))
+            txtCombo := overlay.AddText(Format("x{} y{} w{} h{} +0x200 +0x80", pad, overlay.MarginY, Round(14 * U) - 4 * TamBotonMinimizar() - Round(U * 0.4), Round(U * 0.8)))
             txtPrev := 0
             WinSetTransparent(255, overlay)
             return
@@ -403,7 +409,7 @@ Construir() {
 
     ; El estado actual es grande; el historial usa mini teclas de otra paleta.
     overlay.SetFont("s" Pt(U * 0.45) " c" Col.barra " bold", "Segoe UI")
-    txtCombo := overlay.AddText(Format("x{} y{} w{} h{} +0x200 +0x80 +0x4000", pad, pad, HistorialW - 3 * TamBotonMinimizar() - Round(U * 0.25), barH), "")
+    txtCombo := overlay.AddText(Format("x{} y{} w{} h{} +0x200 +0x80 +0x4000", pad, pad, HistorialW - 4 * TamBotonMinimizar() - Round(U * 0.4), barH), "")
     txtPrev := 0
     if MostrarHistorial
         HistorialPic := overlay.AddText(Format("x{} y{} w{} h{} +0xE", pad, historialY, HistorialW, HistorialH))
@@ -1767,7 +1773,7 @@ TamBotonMinimizar() {
 }
 
 CrearControlMinimizar() {
-    global ControlMinimizar, BotonMinimizar, BotonAjustes, BotonNotas
+    global ControlMinimizar, BotonMinimizar, BotonAjustes, BotonNotas, BotonAnotaciones
     ; Una ventana independiente permite pulsarlo incluso con el teclado bloqueado.
     ControlMinimizar := Gui("+AlwaysOnTop -Caption +ToolWindow -DPIScale +E0x08000000", "Minimizar mostrador")
     ControlMinimizar.MarginX := 0, ControlMinimizar.MarginY := 0
@@ -1780,6 +1786,9 @@ CrearControlMinimizar() {
     BotonNotas := ControlMinimizar.AddText("x0 y0 w26 h26 Center +0x200 +0x100", "✎")
     BotonNotas.OnEvent("Click", (*) => EditarNotaDirecta())
     BotonNotas.SetFont("cFF6B7D")
+    BotonAnotaciones := ControlMinimizar.AddText("x0 y0 w26 h26 Center +0x200 +0x100", Chr(0xE76D))
+    BotonAnotaciones.SetFont("s" Pt(17) " c8AB4F8", "Segoe MDL2 Assets")
+    BotonAnotaciones.OnEvent("Click", AlternarAnotaciones)
     ControlMinimizar.OnEvent("ContextMenu", AbrirMenuAjustes)
     ControlMinimizar.OnEvent("Close", (*) => AlternarMinimizado())
 }
@@ -1796,7 +1805,7 @@ ActualizarControlMinimizar() {
     PosicionarPanelNota()
     if !VentanaMostradorDisponible()
         return
-    global ControlMinimizar, BotonMinimizar, BotonAjustes, BotonNotas, Minimizado, Visible, overlay, U
+    global ControlMinimizar, BotonMinimizar, BotonAjustes, BotonNotas, BotonAnotaciones, Minimizado, Visible, overlay, U
     global IconoMinX, IconoMinY, MostrarTeclado, MostrarHistorial
     if !IsObject(ControlMinimizar)
         return
@@ -1816,7 +1825,7 @@ ActualizarControlMinimizar() {
         pad := Round(U * 0.3)
         margenY := MostrarTeclado ? pad : Round(pad * 0.6)
         separacion := Max(2, Round(U * 0.1))
-        ancho := 3 * tam + 2 * separacion
+        ancho := 4 * tam + 3 * separacion
         x := ox + ow - pad - ancho, y := oy + margenY
         BotonMinimizar.Text := "−"
         ControlMinimizar.Title := "Minimizar teclado (Ctrl+Alt+N)"
@@ -1829,17 +1838,20 @@ ActualizarControlMinimizar() {
         x := Max(NumGet(info, 20, "int"), Min(x, NumGet(info, 28, "int") - ancho))
         y := Max(NumGet(info, 24, "int"), Min(y, NumGet(info, 32, "int") - tam))
     }
-    IconoMinX := Minimizado ? x : x + 2 * (tam + separacion)
+    IconoMinX := Minimizado ? x : x + 3 * (tam + separacion)
     IconoMinY := y
+    BotonAnotaciones.Visible := !Minimizado
     BotonNotas.Visible := !Minimizado
     BotonAjustes.Visible := !Minimizado
     if !Minimizado {
         BotonNotas.Move(0, 0, tam, tam)
         BotonNotas.SetFont("s" Pt(tam * 0.65) " cFF6B7D", "Segoe UI Symbol")
-        BotonAjustes.Move(tam + separacion, 0, tam, tam)
+        BotonAnotaciones.Move(tam + separacion, 0, tam, tam)
+        BotonAnotaciones.SetFont("s" Pt(tam * 0.62) " c8AB4F8", "Segoe MDL2 Assets")
+        BotonAjustes.Move(2 * (tam + separacion), 0, tam, tam)
         BotonAjustes.SetFont("s" Pt(tam * 0.65) " cF1F1F1", "Segoe UI Symbol")
     }
-    BotonMinimizar.Move(Minimizado ? 0 : 2 * (tam + separacion), 0, tam, tam)
+    BotonMinimizar.Move(Minimizado ? 0 : 3 * (tam + separacion), 0, tam, tam)
     BotonMinimizar.SetFont("s" Pt(tam * 0.65) " cF1F1F1", "Segoe UI Symbol")
     ControlMinimizar.Show(Format("x{} y{} w{} h{} NoActivate", x, y, ancho, tam))
     ControlMinimizar.Opt("+AlwaysOnTop")
@@ -2730,25 +2742,45 @@ MostrarCapturaAnotaciones() {
 }
 
 CrearBarraAnotaciones() {
-    global AnotBarra, AnotCaptura, AnotHerramienta, AnotBotones
+    global AnotBarra, AnotCaptura, AnotBotones, AnotColores, AnotArrastre, AnotEstado
+    global AnotGrosorTexto, AnotDeshacerBoton, AnotRehacerBoton, AnotBorrarBoton
     if AnotBarra is Gui
         AnotBarra.Destroy()
-    g := Gui("+AlwaysOnTop -Caption +ToolWindow -DPIScale +E0x08000000 +Owner" AnotCaptura.Hwnd, "Herramientas de anotación")
+    g := Gui("+AlwaysOnTop -Caption +ToolWindow -DPIScale +E0x08000000 +Owner" AnotCaptura.Hwnd, "Anotaciones · Herramientas")
     AnotBarra := g
-    g.SetFont("s10 cF1F1F1", "Segoe UI")
-    escala := A_ScreenDPI / 96, x := Round(10 * escala)
-    AnotBotones := Map()
-    acciones := [["Trazo", "trazo", 78], ["Flecha", "flecha", 78], ["Óvalo", "ovalo", 78],
-        ["Deshacer", "deshacer", 92], ["Borrar", "borrar", 80], ["⚙", "ajustes", 42], ["Salir", "salir", 65]]
-    for accion in acciones {
-        boton := g.AddButton(Format("x{} y{} w{} h{}", x, Round(6 * escala), Round(accion[3] * escala), Round(32 * escala)), accion[1])
-        boton.OnEvent("Click", AccionBarraAnotacion.Bind(accion[2]))
-        if accion[2] = "trazo" || accion[2] = "flecha" || accion[2] = "ovalo"
-            AnotBotones[accion[2]] := boton
-        x += Round((accion[3] + 6) * escala)
-    }
-    AplicarTemaAjustes(g)
-    MarcarHerramientaAnotacion()
+    g.BackColor := "0F0F0F"
+    g.MarginX := 0, g.MarginY := 0
+    escala := A_ScreenDPI / 96
+    AnotBotones := Map(), AnotColores := Map(), AnotArrastre := Map()
+    g.SetFont("s12 cF1F1F1 bold", "Segoe UI")
+    titulo := g.AddText(Format("x{} y{} w{} h{} +0x200 +0x100", Round(16 * escala), Round(10 * escala), Round(370 * escala), Round(26 * escala)), "Anotaciones")
+    AnotArrastre[titulo.Hwnd] := true
+    g.SetFont("s9 c999999 norm", "Segoe UI")
+    AnotEstado := g.AddText(Format("x{} y{} w{} h{} +0x200 +0x100", Round(16 * escala), Round(36 * escala), Round(370 * escala), Round(20 * escala)))
+    AnotArrastre[AnotEstado.Hwnd] := true
+    BotonPaletaAnotacion(g, Chr(0xE713), 454, 12, 30, 30, AbrirAjustesAnotaciones, "232323", "D6D6D6", "Segoe MDL2 Assets")
+    BotonPaletaAnotacion(g, Chr(0xE8BB), 498, 12, 30, 30, FinalizarAnotaciones, "232323", "D6D6D6", "Segoe MDL2 Assets")
+    herramientas := [["✎  Trazo", "trazo"], ["↗  Flecha", "flecha"], ["○  Óvalo", "ovalo"], ["▭  Marco", "marco"], ["╱  Línea", "linea"]]
+    for i, herramienta in herramientas
+        AnotBotones[herramienta[2]] := BotonPaletaAnotacion(g, herramienta[1], 16 + (i - 1) * 104, 66, 96, 40,
+            ElegirHerramientaAnotacion.Bind(herramienta[2]))
+    g.SetFont("s9 cAAAAAA", "Segoe UI")
+    g.AddText(Format("x{} y{} w{} h{} +0x200", Round(16 * escala), Round(122 * escala), Round(42 * escala), Round(26 * escala)), "Color")
+    for i, color in ["FF334D", "FFC857", "71DCA7", "8AB4F8", "C5A5F5", "F1F1F1"]
+        AnotColores[color] := BotonPaletaAnotacion(g, "", 64 + (i - 1) * 32, 122, 24, 26,
+            ElegirColorAnotacion.Bind(color), color, "181818")
+    g.SetFont("s9 cAAAAAA", "Segoe UI")
+    g.AddText(Format("x{} y{} w{} h{} +0x200", Round(286 * escala), Round(122 * escala), Round(52 * escala), Round(26 * escala)), "Grosor")
+    BotonPaletaAnotacion(g, "−", 344, 122, 28, 26, CambiarGrosorAnotacion.Bind(-1))
+    g.SetFont("s9 cF1F1F1", "Segoe UI")
+    AnotGrosorTexto := g.AddText(Format("x{} y{} w{} h{} Center +0x200", Round(376 * escala), Round(122 * escala), Round(48 * escala), Round(26 * escala)))
+    BotonPaletaAnotacion(g, "+", 428, 122, 28, 26, CambiarGrosorAnotacion.Bind(1))
+    g.AddText(Format("x{} y{} w{} h1 Background272727", Round(16 * escala), Round(155 * escala), Round(512 * escala)))
+    AnotDeshacerBoton := BotonPaletaAnotacion(g, "↶  Deshacer", 16, 168, 112, 32, DeshacerAnotacion)
+    AnotRehacerBoton := BotonPaletaAnotacion(g, "↷  Rehacer", 136, 168, 112, 32, RehacerAnotacion)
+    AnotBorrarBoton := BotonPaletaAnotacion(g, "Borrar todo", 256, 168, 132, 32, BorrarAnotaciones, "352126", "FF9AAA")
+    BotonPaletaAnotacion(g, "Volver", 396, 168, 132, 32, FinalizarAnotaciones)
+    ActualizarPaletaAnotaciones()
     punto := Buffer(8, 0)
     DllCall("GetCursorPos", "ptr", punto)
     monitor := DllCall("MonitorFromPoint", "int64", NumGet(punto, 0, "int64"), "uint", 2, "ptr")
@@ -2760,33 +2792,124 @@ CrearBarraAnotaciones() {
     } else {
         MonitorGetWorkArea(MonitorGetPrimary(), &izquierda, &arriba, &derecha)
     }
-    ancho := x + Round(4 * escala)
-    g.Show(Format("x{} y{} w{} h{} NoActivate", Max(izquierda, Round((izquierda + derecha - ancho) / 2)),
-        arriba + Round(12 * escala), ancho, Round(44 * escala)))
+    ancho := Round(544 * escala), alto := Round(214 * escala)
+    RedondearNota(g, ancho, alto, Round(14 * escala))
+    g.Show(Format("x{} y{} w{} h{} NoActivate", Max(izquierda, Round((izquierda + derecha - ancho) / 2)), arriba + Round(12 * escala), ancho, alto))
 }
 
-AccionBarraAnotacion(accion, *) {
-    switch accion {
-        case "trazo", "flecha", "ovalo": ElegirHerramientaAnotacion(accion)
-        case "deshacer": DeshacerAnotacion()
-        case "borrar": BorrarAnotaciones()
-        case "ajustes": AbrirAjustesAnotaciones()
-        case "salir": FinalizarAnotaciones()
-    }
+BotonPaletaAnotacion(g, texto, x, y, w, h, accion, fondo := "232323", tinta := "D6D6D6", fuente := "Segoe UI") {
+    escala := A_ScreenDPI / 96
+    g.SetFont("s10 c" tinta " norm", fuente)
+    boton := g.AddText(Format("x{} y{} w{} h{} Center +0x200 +0x100 Background{}",
+        Round(x * escala), Round(y * escala), Round(w * escala), Round(h * escala), fondo), texto)
+    boton.OnEvent("Click", accion)
+    RedondearNota(boton, Round(w * escala), Round(h * escala), Round(8 * escala))
+    return boton
 }
 
-ElegirHerramientaAnotacion(herramienta) {
+ElegirHerramientaAnotacion(herramienta, *) {
     global AnotHerramienta
     AnotHerramienta := herramienta
-    MarcarHerramientaAnotacion()
+    ActualizarPaletaAnotaciones()
     GuardarAnotacionesConfig()
 }
 
-MarcarHerramientaAnotacion() {
-    global AnotBotones, AnotHerramienta
-    for clave, boton in AnotBotones
-        boton.Opt(clave = AnotHerramienta ? "+Default" : "-Default")
+ElegirColorAnotacion(color, *) {
+    global AnotColor
+    AnotColor := color
+    ActualizarPaletaAnotaciones()
+    GuardarAnotacionesConfig()
 }
+
+CambiarGrosorAnotacion(delta, *) {
+    global AnotGrosor
+    AnotGrosor := Max(2, Min(16, AnotGrosor + delta))
+    ActualizarPaletaAnotaciones()
+    GuardarAnotacionesConfig()
+}
+
+ActualizarPaletaAnotaciones() {
+    global AnotBotones, AnotColores, AnotHerramienta, AnotColor, AnotEstado, AnotDuracion, AnotGrosor
+    global AnotGrosorTexto, AnotDeshacerBoton, AnotRehacerBoton, AnotBorrarBoton
+    global AnotHistorial, AnotRehacer, AnotActual, AnotTrazos
+    for clave, boton in AnotBotones {
+        boton.Opt("Background" (clave = AnotHerramienta ? "45232B" : "232323"))
+        boton.SetFont("c" (clave = AnotHerramienta ? "FF96A8" : "D6D6D6"))
+        DllCall("InvalidateRect", "ptr", boton.Hwnd, "ptr", 0, "int", true)
+    }
+    for color, boton in AnotColores
+        boton.Text := color = AnotColor ? "✓" : ""
+    if IsObject(AnotGrosorTexto)
+        AnotGrosorTexto.Text := AnotGrosor " px"
+    if IsObject(AnotEstado) {
+        nombres := Map("trazo", "Trazo libre", "flecha", "Flecha", "ovalo", "Óvalo", "marco", "Marco", "linea", "Línea")
+        AnotEstado.Text := nombres[AnotHerramienta] " · " (AnotDuracion ? AnotDuracion " s" : "Borrado manual")
+    }
+    if IsObject(AnotDeshacerBoton)
+        AnotDeshacerBoton.Enabled := AnotHistorial.Length > 0 || IsObject(AnotActual)
+    if IsObject(AnotRehacerBoton)
+        AnotRehacerBoton.Enabled := AnotRehacer.Length > 0
+    if IsObject(AnotBorrarBoton)
+        AnotBorrarBoton.Enabled := AnotTrazos.Length > 0 || IsObject(AnotActual)
+}
+
+RegistrarCambioAnotacion(antes) {
+    global AnotHistorial, AnotRehacer, AnotTrazos
+    AnotHistorial.Push({antes: antes, despues: AnotTrazos.Clone()})
+    AnotRehacer := []
+    ActualizarPaletaAnotaciones()
+}
+
+CancelarTrazoAnotacion() {
+    global AnotActual, AnotHwndCaptura
+    if !IsObject(AnotActual)
+        return false
+    AnotActual := 0
+    if AnotHwndCaptura && DllCall("GetCapture", "ptr") = AnotHwndCaptura
+        DllCall("ReleaseCapture")
+    SolicitarPintadoAnotaciones()
+    ActualizarPaletaAnotaciones()
+    return true
+}
+
+DeshacerAnotacion(*) {
+    global AnotHistorial, AnotRehacer
+    if CancelarTrazoAnotacion() || !AnotHistorial.Length
+        return
+    cambio := AnotHistorial.Pop()
+    AnotRehacer.Push(cambio)
+    RestaurarDibujosAnotacion(cambio.antes)
+}
+
+RehacerAnotacion(*) {
+    global AnotHistorial, AnotRehacer
+    if CancelarTrazoAnotacion() || !AnotRehacer.Length
+        return
+    cambio := AnotRehacer.Pop()
+    AnotHistorial.Push(cambio)
+    RestaurarDibujosAnotacion(cambio.despues)
+}
+
+RestaurarDibujosAnotacion(dibujos) {
+    global AnotTrazos, AnotDuracion
+    AnotTrazos := dibujos.Clone()
+    for trazo in AnotTrazos
+        trazo.vence := AnotDuracion ? A_TickCount + AnotDuracion * 1000 : 0
+    ActualizarPaletaAnotaciones()
+    SolicitarPintadoAnotaciones()
+}
+
+BorrarAnotaciones(*) {
+    global AnotTrazos
+    CancelarTrazoAnotacion()
+    if !AnotTrazos.Length
+        return
+    antes := AnotTrazos.Clone()
+    AnotTrazos := []
+    RegistrarCambioAnotacion(antes)
+    SolicitarPintadoAnotaciones()
+}
+
 
 PuntoAnotacion() {
     global AnotX, AnotY
@@ -2796,12 +2919,18 @@ PuntoAnotacion() {
 }
 
 PresionarAnotacion(wParam, lParam, msg, hwnd) {
-    global AnotModo, AnotHwndCaptura, AnotActual, AnotHerramienta, AnotColor, AnotGrosor
+    global AnotModo, AnotHwndCaptura, AnotActual, AnotHerramienta, AnotColor, AnotGrosor, AnotBarra, AnotArrastre
+    if AnotModo && (AnotBarra is Gui) && AnotArrastre.Has(hwnd) {
+        DllCall("ReleaseCapture")
+        PostMessage(0x00A1, 2, 0, , AnotBarra)
+        return 0
+    }
     if !AnotModo || hwnd != AnotHwndCaptura
         return
     AnotActual := {herramienta: AnotHerramienta, puntos: [PuntoAnotacion()], color: AnotColor,
         grosor: Max(2, Round(AnotGrosor * A_ScreenDPI / 96)), vence: 0}
     DllCall("SetCapture", "ptr", AnotHwndCaptura)
+    ActualizarPaletaAnotaciones()
     SolicitarPintadoAnotaciones()
     return 0
 }
@@ -2831,8 +2960,10 @@ SoltarAnotacion(wParam, lParam, msg, hwnd) {
         return
     MoverAnotacion(wParam, lParam, msg, hwnd)
     AnotActual.vence := AnotDuracion ? A_TickCount + AnotDuracion * 1000 : 0
+    antes := AnotTrazos.Clone()
     AnotTrazos.Push(AnotActual)
     AnotActual := 0
+    RegistrarCambioAnotacion(antes)
     if DllCall("GetCapture", "ptr") = AnotHwndCaptura
         DllCall("ReleaseCapture")
     SolicitarPintadoAnotaciones()
@@ -2856,24 +2987,6 @@ CursorAnotacion(wParam, lParam, msg, hwnd) {
     }
 }
 
-DeshacerAnotacion(*) {
-    global AnotActual, AnotTrazos, AnotHwndCaptura
-    if IsObject(AnotActual) {
-        AnotActual := 0
-        if AnotHwndCaptura && DllCall("GetCapture", "ptr") = AnotHwndCaptura
-            DllCall("ReleaseCapture")
-    } else if AnotTrazos.Length {
-        AnotTrazos.Pop()
-    }
-    SolicitarPintadoAnotaciones()
-}
-
-BorrarAnotaciones(*) {
-    global AnotTrazos
-    AnotTrazos := []
-    ; Deshacer también cancela un trazo que todavía está bajo el cursor.
-    DeshacerAnotacion()
-}
 
 ExpirarAnotaciones() {
     global AnotTrazos, AnotActual, AnotModo, AnotHwndCaptura
@@ -2892,6 +3005,7 @@ ExpirarAnotaciones() {
         }
         if cambio {
             AnotTrazos := nuevas
+            ActualizarPaletaAnotaciones()
             SolicitarPintadoAnotaciones()
         }
         if !AnotModo && !AnotTrazos.Length && !IsObject(AnotActual)
@@ -2966,6 +3080,9 @@ PintarTrazoAnotacion(dc, trazo) {
             if puntos.Length = 1 {
                 DllCall("MoveToEx", "ptr", dc, "int", primero[1], "int", primero[2], "ptr", 0)
                 DllCall("LineTo", "ptr", dc, "int", primero[1] + 1, "int", primero[2] + 1)
+            } else if trazo.herramienta = "marco" {
+                DllCall("Rectangle", "ptr", dc, "int", Min(primero[1], ultimo[1]), "int", Min(primero[2], ultimo[2]),
+                    "int", Max(primero[1], ultimo[1]), "int", Max(primero[2], ultimo[2]))
             } else if trazo.herramienta = "ovalo" {
                 DllCall("Ellipse", "ptr", dc, "int", Min(primero[1], ultimo[1]), "int", Min(primero[2], ultimo[2]),
                     "int", Max(primero[1], ultimo[1]), "int", Max(primero[2], ultimo[2]))
@@ -2996,7 +3113,8 @@ PolilineaAnotacion(dc, puntos) {
 
 CerrarAnotaciones(*) {
     global AnotModo, AnotHwndCaptura, AnotLienzo, AnotCaptura, AnotBarra, AnotDC, AnotBitmap
-    global AnotActual, AnotTrazos, AnotPendiente, AnotPic, AnotBotones
+    global AnotActual, AnotTrazos, AnotPendiente, AnotPic, AnotBotones, AnotHistorial, AnotRehacer
+    global AnotColores, AnotArrastre, AnotEstado, AnotGrosorTexto, AnotDeshacerBoton, AnotRehacerBoton, AnotBorrarBoton
     criticoAnterior := A_IsCritical
     Critical "On"
     try {
@@ -3009,6 +3127,8 @@ CerrarAnotaciones(*) {
             if ventana is Gui
                 ventana.Destroy()
         AnotBarra := 0, AnotCaptura := 0, AnotLienzo := 0, AnotPic := 0, AnotBotones := Map()
+        AnotHistorial := [], AnotRehacer := [], AnotColores := Map(), AnotArrastre := Map()
+        AnotEstado := 0, AnotGrosorTexto := 0, AnotDeshacerBoton := 0, AnotRehacerBoton := 0, AnotBorrarBoton := 0
         if AnotBitmap
             DllCall("DeleteObject", "ptr", AnotBitmap)
         if AnotDC
@@ -3039,8 +3159,8 @@ AbrirAjustesAnotaciones(*) {
     g.AddText("x18 y16 w475 h30", "Anotaciones temporales")
     g.SetFont("s10 cF1F1F1 norm", "Segoe UI")
     g.AddText("x18 y76 w180 h25", "Herramienta inicial")
-    herramienta := g.AddDropDownList("x202 y72 w293", ["Trazo", "Flecha", "Óvalo"])
-    herramienta.Choose(AnotHerramienta = "flecha" ? 2 : AnotHerramienta = "ovalo" ? 3 : 1)
+    herramienta := g.AddDropDownList("x202 y72 w293", ["Trazo", "Flecha", "Óvalo", "Marco", "Línea"])
+    herramienta.Choose(Map("trazo", 1, "flecha", 2, "ovalo", 3, "marco", 4, "linea", 5)[AnotHerramienta])
     color := CampoColorMouse(g, 122, "Color del dibujo", AnotColor)
     g.AddText("x18 y174 w180 h25", "Grosor del trazo")
     grosor := g.AddEdit("x202 y170 w80 Number", AnotGrosor)
@@ -3070,7 +3190,7 @@ AplicarAjustesAnotaciones(*) {
     }
     AnotColor := color, AnotGrosor := Max(2, Min(16, Integer(c.grosor.Value)))
     AnotDuracion := Max(0, Min(60, Integer(c.duracion.Value)))
-    AnotHerramienta := ["trazo", "flecha", "ovalo"][c.herramienta.Value]
+    AnotHerramienta := ["trazo", "flecha", "ovalo", "marco", "linea"][c.herramienta.Value]
     GuardarAnotacionesConfig()
     CerrarAjustesAnotaciones()
     IniciarAnotaciones()

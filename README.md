@@ -221,32 +221,35 @@ del teclado** en los ajustes de la nota y cambia **Fondo personalizado**.
 
 ## Anotaciones temporales sobre la pantalla
 
-Pulsa **Ctrl izquierdo + Alt izquierdo + A** o **⚙ → Anotar pantalla**.
-Se abre una barra con **Trazo**, **Flecha**, **Óvalo**, **Deshacer**, **Borrar**,
-ajustes y **Salir**. Arrastra con el botón izquierdo para dibujar. El trazo libre
-también permite subrayar texto. Las marcas se dibujan sobre la pantalla y permanecen
-en su posición aunque cambie el contenido de las ventanas.
+Pulsa el **botón azul de dibujo** junto a las notas, ⚙ y minimizar, o usa
+**Ctrl izquierdo + Alt izquierdo + A**. Se abre una paleta flotante oscura con
+herramientas, colores y acciones. Arrastra su cabecera para moverla.
 
-Mientras el modo de dibujo está activo, el ratón dibuja en la capa de anotaciones.
-Pulsa **Esc** o **Salir** para volver a usar las ventanas. Las marcas terminadas
-siguen visibles hasta que se borran o cumplen su duración.
+- **Trazo, Flecha, Óvalo, Marco y Línea** para dibujar, subrayar o señalar un área.
+- **Colores rápidos** y botones **− / +** para cambiar el grosor desde la paleta.
+- **Deshacer y Rehacer**, también después de **Borrar todo**.
+- **Volver** o **Esc** para salir del dibujo y usar las ventanas.
+- **⚙** para elegir cualquier color y modificar la herramienta inicial y la duración.
+
+Mientras el modo está activo, arrastra con el botón izquierdo para dibujar sobre
+la pantalla. Las marcas permanecen en su posición aunque cambie el contenido de
+las ventanas. La herramienta seleccionada se distingue con un acento rojo.
 
 | Control | Acción |
 |---|---|
-| `1`, `2`, `3` en modo dibujo | Trazo, flecha, óvalo |
-| `Ctrl + Z` o clic derecho en el lienzo | Deshacer el último dibujo |
+| `1`, `2`, `3`, `4`, `5` en modo dibujo | Trazo, flecha, óvalo, marco y línea |
+| `Ctrl + Z` o clic derecho en el lienzo | Deshacer |
+| `Ctrl + Y` en modo dibujo | Rehacer |
 | `Supr` en modo dibujo | Borrar todos los dibujos |
-| `Esc` | Salir del modo dibujo |
-| `Ctrl izquierdo + Alt izquierdo + X` | Borrar dibujos también fuera del modo dibujo |
+| `Esc` o Volver | Salir del modo dibujo |
+| `Ctrl izquierdo + Alt izquierdo + X` | Borrar también fuera del modo dibujo |
 
-En **⚙ → Ajustes de anotaciones**, o en el engranaje de la barra, puedes cambiar
-el color, el grosor, la herramienta inicial y el tiempo de permanencia. Por defecto
-se usa rojo con contorno oscuro y cada dibujo desaparece **8 segundos** después
-de soltar el ratón. Una duración de **0** conserva las marcas hasta borrarlas.
-**Guardar y dibujar** aplica los cambios y entra al modo de dibujo. El nuevo estilo
-y la duración se aplican a los dibujos siguientes.
+Cada dibujo desaparece **8 segundos** después de terminarlo por defecto. Puedes
+ajustar esa duración en **⚙ → Ajustes de anotaciones**. Una duración de **0** conserva
+las marcas hasta borrarlas. Al deshacer o rehacer se renueva la duración de las
+marcas restauradas. El nuevo color y grosor se aplican a los dibujos siguientes.
 
 Las preferencias se guardan en `[Anotaciones]` de `overlay-config.ini`. Los dibujos
-permanecen en memoria. Al cerrar el programa o cambiar la distribución de pantallas
-se borran. El modo también funciona con el teclado minimizado y cubre las pantallas
-conectadas. No requiere otro archivo además de los componentes ya incluidos.
+y su historial permanecen en memoria. Al cerrar el programa o cambiar la distribución
+de pantallas se borran. El modo funciona también con el teclado minimizado y cubre
+las pantallas conectadas.
