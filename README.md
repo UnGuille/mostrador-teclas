@@ -225,7 +225,7 @@ Pulsa el **botón azul de dibujo** junto a las notas, ⚙ y minimizar, o usa
 **Ctrl izquierdo + Alt izquierdo + A**. Se abre una paleta flotante oscura con
 herramientas, colores y acciones. Arrastra su cabecera para moverla.
 
-- **Trazo, Flecha, Óvalo, Marco y Línea** para dibujar, subrayar o señalar un área.
+- **Trazo, Flecha, Óvalo, Marco, Línea y Texto** para dibujar, subrayar o señalar un área.
 - **Colores rápidos** y botones **− / +** para cambiar el grosor desde la paleta.
 - **Deshacer y Rehacer**, también después de **Borrar todo**.
 - **Volver** o **Esc** para salir del dibujo y usar las ventanas.
@@ -237,7 +237,7 @@ las ventanas. La herramienta seleccionada se distingue con un acento rojo.
 
 | Control | Acción |
 |---|---|
-| `1`, `2`, `3`, `4`, `5` en modo dibujo | Trazo, flecha, óvalo, marco y línea |
+| `1`, `2`, `3`, `4`, `5`, `6` en modo dibujo | Trazo, flecha, óvalo, marco, línea y texto |
 | `Ctrl + Z` o clic derecho en el lienzo | Deshacer |
 | `Ctrl + Y` en modo dibujo | Rehacer |
 | `Supr` en modo dibujo | Borrar todos los dibujos |
@@ -253,3 +253,18 @@ Las preferencias se guardan en `[Anotaciones]` de `overlay-config.ini`. Los dibu
 y su historial permanecen en memoria. Al cerrar el programa o cambiar la distribución
 de pantallas se borran. El modo funciona también con el teclado minimizado y cubre
 las pantallas conectadas.
+
+
+### Escribir texto sobre la pantalla
+
+Elige **Aa Texto** o pulsa **6** en modo dibujo. Los botones **− / +** de la paleta
+ajustan entonces el tamaño de letra. Pulsa donde quieras colocar la anotación y
+escribe en el editor oscuro. Puedes usar varias líneas y cambiar el tamaño y la
+negrita. Pulsa **Insertar** o **Ctrl + Enter** para colocarla, o **Esc** para cancelar.
+Mientras escribes, los atajos de dibujo se suspenden para permitir editar el texto.
+
+La anotación usa el color elegido en la paleta, una sombra oscura y la duración
+configurada. El tiempo empieza al insertarla. Puedes deshacerla, rehacerla o borrarla
+como cualquier otro dibujo. Cerca del borde se ajusta su posición para mantenerla
+visible en la pantalla donde pulsaste. El tamaño y la negrita también se guardan
+desde los ajustes de anotaciones.
