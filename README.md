@@ -20,7 +20,7 @@ y acentos rojos. Las teclas conservan su relieve y animación de pulsación.
 ## Cómo usarlo
 
 1. Instala [AutoHotkey v2](https://www.autohotkey.com/).
-2. Descarga `mostrador-teclas.ahk` y haz doble clic en él.
+2. Descarga `mostrador-teclas.ahk` y `mostrador-seleccion.ahk` en la misma carpeta. Haz doble clic en `mostrador-teclas.ahk`.
 3. El mostrador inicia **desbloqueado**, para que puedas arrastrarlo hasta donde prefieras. En el primer inicio aparece en la esquina inferior derecha; después utiliza la posición guardada.
 4. Pulsa **Ctrl + Alt + L** para bloquearlo cuando esté en su sitio. Al bloquearlo, los clics atraviesan el mostrador.
 
@@ -97,6 +97,7 @@ Usa **Ctrl y Alt del lado izquierdo**, para evitar conflictos con Alt Gr.
 | `Ctrl + Alt + I` | Mostrar / ocultar el historial |
 | `Ctrl + Alt + B` | Mostrar / ocultar el mouse visual |
 | `Ctrl + Alt + M` | Activar / desactivar el resplandor del cursor |
+| `Ctrl + Alt + S` | Activar / desactivar resaltado de selección |
 | `Ctrl + Alt + Q` | Cerrar el programa |
 
 Las mismas opciones están disponibles al hacer clic derecho en el icono de la bandeja del sistema.
@@ -176,3 +177,32 @@ inferior derecha de la pantalla principal y lo expande si estaba minimizado.
 
 Los antiguos colores predeterminados del mouse y de las notas se adaptan al nuevo
 tema al cargar las preferencias. Los demás colores personalizados se conservan.
+
+
+## Resaltado de selección de texto
+
+Actívalo con **Ctrl izquierdo + Alt izquierdo + S** o desde la bandeja.
+En **⚙ → Selección de texto** puedes activarlo y cambiar el fondo, las letras,
+el color y grosor del contorno/sombra y la negrita. El estilo inicial usa fondo
+amarillo, letras blancas y contorno negro pronunciado.
+
+Se dibuja una capa sobre las líneas seleccionadas en la aplicación activa.
+La capa deja pasar los clics, desaparece al cambiar de ventana o selección y puede
+seguir activa con el mostrador minimizado. El modo se inicia desactivado hasta que
+lo habilites; después recuerda tu preferencia.
+
+La detección usa UI Automation de Windows. Funciona cuando la aplicación facilita
+su selección y las posiciones del texto. La compatibilidad depende de cada navegador,
+editor o lector PDF. Imágenes, documentos escaneados, controles de contraseñas y
+aplicaciones sin TextPattern mantienen su selección habitual. La tipografía de la
+capa se ajusta a los rectángulos disponibles, por lo que puede diferir de la original.
+Procesa hasta cuatro rangos y 60 líneas visibles por actualización.
+
+`mostrador-seleccion.ahk` es un componente en AutoHotkey v2 que se abre y cierra
+desde el mostrador. Aísla las consultas de accesibilidad para que un proveedor lento
+no bloquee el teclado. Ambos archivos deben permanecer juntos. El texto seleccionado
+se procesa en memoria y las preferencias se guardan en `[Seleccion]` de `overlay-config.ini`.
+
+Las notas usan una tarjeta de esquinas redondeadas, márgenes amplios y una barra
+grafito con botones de mayor tamaño. Su contenido conserva la fuente, el tamaño y
+los colores elegidos en ajustes, y sigue expandiéndose hacia arriba.

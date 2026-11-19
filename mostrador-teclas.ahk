@@ -27,6 +27,7 @@
 ;    Ctrl+Alt+I       -> Mostrar / ocultar historial (hasta 4 teclas)
 ;    Ctrl+Alt+B       -> Mostrar / ocultar mouse visual
 ;    Ctrl+Alt+M       -> Activar / desactivar resplandor del mouse
+;    Ctrl+Alt+S       -> Activar / desactivar resaltado de seleccion
 ;    Ctrl+Alt+Q       -> Cerrar
 ;  Tambien hay un menu en el icono de la bandeja del sistema.
 ; ============================================================
@@ -99,6 +100,13 @@ global PanelNota := 0, NotaEditor := 0, NotaEstado := 0
 global NotaEditando := false, NotaGuardada := NotaTexto
 global NotasGui := 0, CamposNotas := 0, BotonNotas := 0
 global AjustesMouseGui := 0, CamposMouse := 0, ColoresMousePersonalizados := Buffer(64, 0)
+global SeleccionActivo := Integer(IniRead(ArchivoConfig, "Seleccion", "Activo", "0"))
+global SeleccionFondo := ColorMouseValido(IniRead(ArchivoConfig, "Seleccion", "Fondo", "FFD600"), "FFD600")
+global SeleccionTexto := ColorMouseValido(IniRead(ArchivoConfig, "Seleccion", "Texto", "FFFFFF"), "FFFFFF")
+global SeleccionSombra := ColorMouseValido(IniRead(ArchivoConfig, "Seleccion", "Sombra", "000000"), "000000")
+global SeleccionGrosor := Max(1, Min(6, Integer(IniRead(ArchivoConfig, "Seleccion", "Grosor", "3"))))
+global SeleccionNegrita := Integer(IniRead(ArchivoConfig, "Seleccion", "Negrita", "1"))
+global SeleccionPid := 0, AjustesSeleccionGui := 0, CamposSeleccion := 0
 
 try {
     OnExit(CerrarMostrador)
@@ -121,6 +129,8 @@ try {
     CrearControlMinimizar()
     CrearHaloMouse()
     AplicarResplandorMouse()
+    AplicarModoSeleccion()
+    ActualizarMenuSeleccion()
 
     OnMessage(0x0201, AlPresionarMouse)    ; WM_LBUTTONDOWN -> arrastrar
     OnMessage(0x0232, AlTerminarArrastre)  ; WM_EXITSIZEMOVE -> guardar posicion
@@ -159,6 +169,7 @@ try {
 <^<!m::AlternarResplandorMouse()
 <^<!o::EditarNotaDirecta()
 <^<!t::AlternarNota()
+<^<!s::AlternarSeleccion()
 <^<!q::ExitApp()
 
 Pt(px) => Max(6, Round(px * 72 / A_ScreenDPI))
@@ -977,6 +988,7 @@ ReubicarMostrador() {
 
 GuardarConfig() {
     GuardarEstiloNota()
+    GuardarSeleccion()
     global ArchivoConfig, Distribucion, Escala, MostrarTeclado, AutoOcultar, DuracionMs, ResaltadoMs, Anclaje, MargenX, MargenY, ResplandorMouse, MostrarMouse, MostrarHistorial
     global HaloTam, HaloColor, HaloOpacidad, MouseCuerpo, MouseBotones, MousePulsado, MouseRueda
     IniWrite(Distribucion,   ArchivoConfig, "Teclado", "Distribucion")
@@ -1003,6 +1015,8 @@ ConfigurarBandeja() {
     A_TrayMenu.Add("Editar nota de clase...  (Ctrl+Alt+O)", (*) => EditarNotaDirecta())
     A_TrayMenu.Add("Mostrar / ocultar nota  (Ctrl+Alt+T)", (*) => AlternarNota())
     A_TrayMenu.Add("Ajustes del mouse y aura...", (*) => AbrirAjustesMouse())
+    A_TrayMenu.Add("Resaltar selección de texto  (Ctrl+Alt+S)", (*) => AlternarSeleccion())
+    A_TrayMenu.Add("Ajustes de selección de texto...", (*) => AbrirAjustesSeleccion())
     A_TrayMenu.Add()
     A_TrayMenu.Add("Bloquear / desbloquear posición  (Ctrl+Alt+L)", (*) => AlternarBloqueo())
     A_TrayMenu.Add("Más grande  (Ctrl+Alt+RePág)", (*) => CambiarEscala(0.1))
@@ -1727,11 +1741,11 @@ CrearControlMinimizar() {
     BotonMinimizar := ControlMinimizar.AddText("x0 y0 w26 h26 Center +0x200 +0x100", "−")
     BotonMinimizar.OnEvent("Click", (*) => AlternarMinimizado())
     BotonAjustes := ControlMinimizar.AddText("x0 y0 w26 h26 Center +0x200 +0x100", "⚙")
-    BotonAjustes.OnEvent("Click", (*) => AbrirAjustesMouse())
+    BotonAjustes.OnEvent("Click", AbrirMenuAjustes)
     BotonNotas := ControlMinimizar.AddText("x0 y0 w26 h26 Center +0x200 +0x100", "✎")
     BotonNotas.OnEvent("Click", (*) => EditarNotaDirecta())
     BotonNotas.SetFont("cFF6B7D")
-    ControlMinimizar.OnEvent("ContextMenu", (*) => AbrirAjustesMouse())
+    ControlMinimizar.OnEvent("ContextMenu", AbrirMenuAjustes)
     ControlMinimizar.OnEvent("Close", (*) => AlternarMinimizado())
 }
 
@@ -2019,6 +2033,8 @@ VentanaMostradorDisponible(hwnd := 0) {
 CerrarMostrador(*) {
     global CerrandoMostrador, HwndTeclado, overlay, ih, HistorialBitmap, Redimension
     CerrandoMostrador := true
+    DetenerSeleccion()
+    CerrarAjustesSeleccion()
     HwndTeclado := 0
     ; Desconectar primero: destruir las ventanas genera mas mensajes de Windows.
     OnMessage(0x007E, AlCambiarPantallas, 0)
@@ -2094,7 +2110,7 @@ AltoNota(escala) {
 }
 
 ; El panel es una ventana propiedad del teclado: admite clics aun bloqueado.
-CabeceraNota(escala) => Max(24, Round(30 * A_ScreenDPI / 96 * escala))
+CabeceraNota(escala) => Max(32, Round(46 * A_ScreenDPI / 96 * escala))
 
 GuardarNotaDirecta(*) {
     global NotaEditor, NotaEditando, NotaTexto, NotaGuardada, ArchivoNota, NotaEstado
@@ -2137,32 +2153,47 @@ CrearNota() {
         return
     w := GuiW - 2 * Round(U * 0.3)
     g := Gui("+AlwaysOnTop -Caption +ToolWindow -DPIScale +Owner" overlay.Hwnd, "Nota de clase")
-    g.BackColor := NotaFondo
+    g.BackColor := "363636"
     g.MarginX := 0, g.MarginY := 0
-    cab := CabeceraNota(Escala), pad := Max(3, Round(U * 0.12)), tam := cab - 2 * pad
-    ; La barra queda junto al teclado tanto con la nota abierta como contraída.
-    yBarra := h - cab + pad
-    g.SetFont("s" Pt(tam * 0.55) " c" NotaColor, "Segoe UI")
-    NotaEstado := g.AddText(Format("x{} y{} w{} h{} +0x200", pad, yBarra, Max(20, w - 6 * (tam + pad) - 3 * pad), tam), "NOTA")
+    cab := CabeceraNota(Escala)
+    pad := Max(7, Round(12 * Escala * A_ScreenDPI / 96))
+    tam := cab - 2 * Max(5, Round(cab * 0.15))
+    separacion := Max(4, Round(U * 0.14))
+    yBarra := h - cab
+    g.AddText(Format("x1 y1 w{} h{} Background{}", w - 2, h - 2, NotaFondo))
+    g.AddText(Format("x1 y{} w{} h{} Background202020", yBarra, w - 2, cab - 1))
+    g.AddText(Format("x{} y{} w3 h{} BackgroundFF334D", pad, yBarra + (cab - tam) // 2, tam))
+    g.SetFont("s" Pt(Max(10, tam * 0.43)) " cBDBDBD", "Segoe UI")
+    anchoBotones := 6 * (tam + separacion)
+    NotaEstado := g.AddText(Format("x{} y{} w{} h{} +0x200 Background202020", pad + 10,
+        yBarra, Max(20, w - anchoBotones - 2 * pad - 10), cab), NotaEditando ? "NOTA · editando" : "NOTA")
     acciones := [[NotaEditando ? "✓" : "✎", (*) => EditarNotaDirecta()],
         ["A−", (*) => CambiarLetraNota(-2)], ["A+", (*) => CambiarLetraNota(2)],
         [NotaContraida ? "▾" : "−", (*) => ContraerNota()],
         ["×", (*) => OcultarNotaDirecta()], ["⚙", (*) => AbrirNotas()]]
-    for i, a in acciones {
-        boton := g.AddText(Format("x{} y{} w{} h{} Center +0x200 +0x100", w - (7 - i) * (tam + pad), yBarra, tam, tam), a[1])
-        boton.OnEvent("Click", a[2])
+    for i, accion in acciones {
+        fondo := i = 1 ? "45232B" : "303030"
+        tinta := i = 1 ? "FF899A" : "EAEAEA"
+        g.SetFont("s" Pt(tam * 0.56) " c" tinta " norm", "Segoe UI")
+        boton := g.AddText(Format("x{} y{} w{} h{} Center +0x200 +0x100 Background{}",
+            w - pad - (7 - i) * (tam + separacion), yBarra + (cab - tam) // 2, tam, tam, fondo), accion[1])
+        boton.OnEvent("Click", accion[2])
     }
     if !NotaContraida {
         g.SetFont("s" Max(6, Round(NotaTam * Escala)) " c" NotaColor (NotaNegrita ? " bold" : " norm"), NotaFuente)
-        opts := Format("x{} y{} w{} h{}", pad, pad, w - 2 * pad, h - cab - 2 * pad)
+        opts := Format("x{} y{} w{} h{}", pad, pad, w - 2 * pad, Max(1, yBarra - 2 * pad))
         if NotaEditando {
-            NotaEditor := g.AddEdit(opts " Multi WantTab Limit0 -E0x200 Background" NotaFondo, NotaTexto)
+            NotaEditor := g.AddEdit(opts " Multi WantTab Limit0 -E0x200 -Border Background" NotaFondo, NotaTexto)
             NotaEditor.OnEvent("Change", NotaModificada)
         } else {
             lectura := g.AddText(opts " +0x80 +0x100 Background" NotaFondo, TextoNotaVisible(NotaTexto, NotaEspacios))
             lectura.OnEvent("DoubleClick", (*) => EditarNotaDirecta())
         }
     }
+    radio := Max(8, Round(14 * Escala * A_ScreenDPI / 96))
+    region := DllCall("CreateRoundRectRgn", "int", 0, "int", 0, "int", w + 1, "int", h + 1, "int", radio, "int", radio, "ptr")
+    if region && !DllCall("SetWindowRgn", "ptr", g.Hwnd, "ptr", region, "int", false)
+        DllCall("DeleteObject", "ptr", region)
     g.OnEvent("Close", (*) => OcultarNotaDirecta())
     g.OnEvent("Escape", (*) => FinalizarEdicionNota())
     PanelNota := {gui: g, ancho: w, alto: h}
@@ -2386,4 +2417,148 @@ AplicarNota(*) {
     NotaColor := color, NotaFondo := fondo
     GuardarEstiloNota()
     ActualizarNota("Nota guardada · Ctrl+Alt+T para mostrar / ocultar")
+}
+
+; Selección global: el lector se ejecuta aparte para aislar los proveedores UIA.
+AplicarModoSeleccion() {
+    global SeleccionActivo, SeleccionPid, ArchivoConfig
+    if SeleccionPid && !ProcessExist(SeleccionPid)
+        SeleccionPid := 0
+    if !SeleccionActivo {
+        if SeleccionPid
+            try ProcessClose(SeleccionPid)
+        SeleccionPid := 0
+        return
+    }
+    if SeleccionPid
+        return
+    componente := A_ScriptDir "\mostrador-seleccion.ahk"
+    if !FileExist(componente) {
+        SeleccionActivo := false
+        IniWrite(0, ArchivoConfig, "Seleccion", "Activo")
+        MsgBox("Coloca mostrador-seleccion.ahk junto al mostrador para activar el resaltado.", "Selección de texto")
+        return
+    }
+    try Run('"' A_AhkPath '" "' componente '" ' A_Pid ' "' ArchivoConfig '"', A_ScriptDir, "Hide", &SeleccionPid)
+    catch as err {
+        SeleccionActivo := false, SeleccionPid := 0
+        IniWrite(0, ArchivoConfig, "Seleccion", "Activo")
+        MsgBox("No se pudo iniciar el resaltado: " err.Message, "Selección de texto")
+    }
+}
+
+GuardarSeleccion() {
+    global ArchivoConfig, SeleccionActivo, SeleccionFondo, SeleccionTexto, SeleccionSombra, SeleccionGrosor, SeleccionNegrita
+    for clave, valor in Map("Activo", SeleccionActivo, "Fondo", SeleccionFondo, "Texto", SeleccionTexto,
+        "Sombra", SeleccionSombra, "Grosor", SeleccionGrosor, "Negrita", SeleccionNegrita)
+        IniWrite(valor, ArchivoConfig, "Seleccion", clave)
+}
+
+AlternarSeleccion(*) {
+    global SeleccionActivo, CamposSeleccion
+    SeleccionActivo := !SeleccionActivo
+    GuardarSeleccion()
+    AplicarModoSeleccion()
+    if IsObject(CamposSeleccion)
+        CamposSeleccion.activo.Value := SeleccionActivo
+    ActualizarMenuSeleccion()
+}
+
+ActualizarMenuSeleccion() {
+    global SeleccionActivo
+    item := "Resaltar selección de texto  (Ctrl+Alt+S)"
+    if SeleccionActivo
+        A_TrayMenu.Check(item)
+    else
+        A_TrayMenu.Uncheck(item)
+}
+
+AbrirMenuAjustes(*) {
+    menu := Menu()
+    menu.Add("Mouse y aura...", (*) => AbrirAjustesMouse())
+    menu.Add("Notas...", (*) => AbrirNotas())
+    menu.Add("Selección de texto...", (*) => AbrirAjustesSeleccion())
+    menu.Show()
+}
+
+AbrirAjustesSeleccion(*) {
+    global AjustesSeleccionGui, CamposSeleccion, SeleccionActivo, SeleccionFondo, SeleccionTexto, SeleccionSombra
+    global SeleccionGrosor, SeleccionNegrita
+    if IsObject(AjustesSeleccionGui) {
+        AjustesSeleccionGui.Show()
+        return
+    }
+    g := Gui("+AlwaysOnTop", "Selección de texto · Mostrador")
+    AjustesSeleccionGui := g
+    g.SetFont("s16 cF1F1F1 bold", "Segoe UI")
+    g.AddText("x18 y16 w490 h32", "Selección de texto")
+    g.SetFont("s10 norm cAAAAAA", "Segoe UI")
+    g.AddText("x18 y54 w490 h40", "Resalta el texto seleccionado en las aplicaciones que exponen su selección a Windows.")
+    g.SetFont("s10 cF1F1F1", "Segoe UI")
+    activo := g.AddCheckbox("x18 y106 w490 h26", "Activar resaltado global · Ctrl + Alt + S")
+    activo.Value := SeleccionActivo
+    fondo := CampoColorMouse(g, 152, "Fondo del resaltado", SeleccionFondo)
+    texto := CampoColorMouse(g, 194, "Color de las letras", SeleccionTexto)
+    sombra := CampoColorMouse(g, 236, "Sombra y contorno", SeleccionSombra)
+    g.AddText("x18 y286 w265 h25", "Grosor de sombra y contorno")
+    grosor := g.AddEdit("x300 y282 w70 Number", SeleccionGrosor)
+    g.AddUpDown("Range1-6", SeleccionGrosor)
+    negrita := g.AddCheckbox("x18 y328 w400 h26", "Letras en negrita")
+    negrita.Value := SeleccionNegrita
+    g.SetFont("s9 cAAAAAA", "Segoe UI")
+    g.AddText("x18 y374 w490 h56", "La capa deja pasar los clics y se retira al cambiar de ventana o selección. Si una aplicación no facilita el texto y su posición, conserva su selección habitual.")
+    g.SetFont("s10 cF1F1F1", "Segoe UI")
+    g.AddButton("x18 y452 w155 h34", "Colores iniciales").OnEvent("Click", RestablecerSeleccion)
+    g.AddButton("x280 y452 w110 h34 Default", "Aplicar").OnEvent("Click", AplicarAjustesSeleccion)
+    g.AddButton("x400 y452 w110 h34", "Cerrar").OnEvent("Click", CerrarAjustesSeleccion)
+    CamposSeleccion := {activo: activo, fondo: fondo, texto: texto, sombra: sombra, grosor: grosor, negrita: negrita}
+    g.OnEvent("Close", CerrarAjustesSeleccion)
+    g.OnEvent("Escape", CerrarAjustesSeleccion)
+    AplicarTemaAjustes(g)
+    g.Show("w530 h508")
+}
+
+RestablecerSeleccion(*) {
+    global CamposSeleccion
+    c := CamposSeleccion
+    for clave, color in Map("fondo", "FFD600", "texto", "FFFFFF", "sombra", "000000") {
+        campo := c.%clave%
+        campo.campo.Value := color
+        ActualizarMuestraMouse(campo.campo, campo.muestra)
+    }
+    c.grosor.Value := 3, c.negrita.Value := 1
+}
+
+AplicarAjustesSeleccion(*) {
+    global CamposSeleccion, SeleccionActivo, SeleccionFondo, SeleccionTexto, SeleccionSombra, SeleccionGrosor, SeleccionNegrita
+    c := CamposSeleccion
+    fondo := ColorMouseValido(c.fondo.campo.Value)
+    texto := ColorMouseValido(c.texto.campo.Value)
+    sombra := ColorMouseValido(c.sombra.campo.Value)
+    if fondo = "" || texto = "" || sombra = "" || !IsInteger(c.grosor.Value) {
+        MsgBox("Revisa los tres colores y el grosor de la sombra.", "Selección de texto")
+        return
+    }
+    SeleccionActivo := c.activo.Value, SeleccionFondo := fondo, SeleccionTexto := texto, SeleccionSombra := sombra
+    SeleccionGrosor := Max(1, Min(6, Integer(c.grosor.Value))), SeleccionNegrita := c.negrita.Value
+    ; Reiniciar sólo el lector para aplicar el estilo de forma coherente.
+    DetenerSeleccion()
+    GuardarSeleccion()
+    AplicarModoSeleccion()
+    c.activo.Value := SeleccionActivo
+    ActualizarMenuSeleccion()
+}
+
+DetenerSeleccion() {
+    global SeleccionPid
+    if SeleccionPid && ProcessExist(SeleccionPid)
+        try ProcessClose(SeleccionPid)
+    SeleccionPid := 0
+}
+
+CerrarAjustesSeleccion(*) {
+    global AjustesSeleccionGui, CamposSeleccion
+    if IsObject(AjustesSeleccionGui)
+        AjustesSeleccionGui.Destroy()
+    AjustesSeleccionGui := 0, CamposSeleccion := 0
 }
