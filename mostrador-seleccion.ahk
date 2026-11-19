@@ -28,7 +28,7 @@ ActualizarSeleccion() {
         ventana := DllCall("GetForegroundWindow", "ptr")
         pid := 0
         DllCall("GetWindowThreadProcessId", "ptr", ventana, "uint*", &pid)
-        if ventana != VentanaAnterior || GetKeyState("LButton", "P") || pid = A_Pid {
+        if ventana != VentanaAnterior || GetKeyState("LButton", "P") || pid = ProcessExist() {
             LimpiarSeleccion()
             VentanaAnterior := ventana
             return

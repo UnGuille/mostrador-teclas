@@ -2439,7 +2439,7 @@ AplicarModoSeleccion() {
         MsgBox("Coloca mostrador-seleccion.ahk junto al mostrador para activar el resaltado.", "Selección de texto")
         return
     }
-    try Run('"' A_AhkPath '" "' componente '" ' A_Pid ' "' ArchivoConfig '"', A_ScriptDir, "Hide", &SeleccionPid)
+    try Run('"' A_AhkPath '" "' componente '" ' ProcessExist() ' "' ArchivoConfig '"', A_ScriptDir, "Hide", &SeleccionPid)
     catch as err {
         SeleccionActivo := false, SeleccionPid := 0
         IniWrite(0, ArchivoConfig, "Seleccion", "Activo")
