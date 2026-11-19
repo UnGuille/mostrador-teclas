@@ -28,6 +28,8 @@
 ;    Ctrl+Alt+B       -> Mostrar / ocultar mouse visual
 ;    Ctrl+Alt+M       -> Activar / desactivar resplandor del mouse
 ;    Ctrl+Alt+S       -> Activar / desactivar resaltado de seleccion
+;    Ctrl+Alt+A       -> Entrar / salir de anotaciones temporales
+;    Ctrl+Alt+X       -> Borrar anotaciones
 ;    Ctrl+Alt+Q       -> Cerrar
 ;  Tambien hay un menu en el icono de la bandeja del sistema.
 ; ============================================================
@@ -109,9 +111,24 @@ global SeleccionSombra := ColorMouseValido(IniRead(ArchivoConfig, "Seleccion", "
 global SeleccionGrosor := Max(1, Min(6, Integer(IniRead(ArchivoConfig, "Seleccion", "Grosor", "3"))))
 global SeleccionNegrita := Integer(IniRead(ArchivoConfig, "Seleccion", "Negrita", "1"))
 global SeleccionPid := 0, AjustesSeleccionGui := 0, CamposSeleccion := 0
+global AnotModo := false, AnotLienzo := 0, AnotCaptura := 0, AnotBarra := 0, AnotPic := 0
+global AnotAjustes := 0, AnotCampos := 0, AnotHwndCaptura := 0, AnotBotones := Map()
+global AnotDC := 0, AnotBitmap := 0, AnotClave := "000001", AnotPendiente := false
+global AnotX := 0, AnotY := 0, AnotW := 0, AnotH := 0, AnotActual := 0, AnotTrazos := []
+global AnotHerramienta := IniRead(ArchivoConfig, "Anotaciones", "Herramienta", "trazo")
+if !RegExMatch(AnotHerramienta, "^(trazo|flecha|ovalo)$")
+    AnotHerramienta := "trazo"
+global AnotColor := ColorMouseValido(IniRead(ArchivoConfig, "Anotaciones", "Color", "FF334D"), "FF334D")
+global AnotGrosor := Max(2, Min(16, Integer(IniRead(ArchivoConfig, "Anotaciones", "Grosor", "4"))))
+global AnotDuracion := Max(0, Min(60, Integer(IniRead(ArchivoConfig, "Anotaciones", "DuracionSeg", "8"))))
 
 try {
     OnExit(CerrarMostrador)
+    OnMessage(0x0201, PresionarAnotacion)
+    OnMessage(0x0200, MoverAnotacion)
+    OnMessage(0x0202, SoltarAnotacion)
+    OnMessage(0x0204, DerechoAnotacion)
+    OnMessage(0x0020, CursorAnotacion)
     OnMessage(0x007E, AlCambiarPantallas) ; WM_DISPLAYCHANGE
     OnMessage(0x001A, AlCambiarPantallas) ; WM_SETTINGCHANGE
     OnMessage(0x0047, SeguirPosicionMostrador) ; WM_WINDOWPOSCHANGED
@@ -172,7 +189,18 @@ try {
 <^<!o::EditarNotaDirecta()
 <^<!t::AlternarNota()
 <^<!s::AlternarSeleccion()
+<^<!a::AlternarAnotaciones()
+<^<!x::BorrarAnotaciones()
 <^<!q::ExitApp()
+
+#HotIf AnotModo
+*Esc::FinalizarAnotaciones()
+^z::DeshacerAnotacion()
+Delete::BorrarAnotaciones()
+1::ElegirHerramientaAnotacion("trazo")
+2::ElegirHerramientaAnotacion("flecha")
+3::ElegirHerramientaAnotacion("ovalo")
+#HotIf
 
 Pt(px) => Max(6, Round(px * 72 / A_ScreenDPI))
 EsModificador(sc) => (sc = 0x1D || sc = 0x11D || sc = 0x2A || sc = 0x36 || sc = 0x38 || sc = 0x138 || sc = 0x15B || sc = 0x15C)
@@ -971,6 +999,8 @@ AlCambiarPantallas(wParam, lParam, msg, hwnd) {
     global CerrandoMostrador
     if CerrandoMostrador || (msg = 0x001A && wParam != 0x002F)
         return
+    ; El dibujo usa las coordenadas anteriores de las pantallas.
+    SetTimer(CerrarAnotaciones, -1)
     ; Esperar a que Windows termine de actualizar la distribución de pantallas.
     SetTimer(ReubicarMostrador, -300)
 }
@@ -1019,6 +1049,9 @@ ConfigurarBandeja() {
     A_TrayMenu.Add("Ajustes del mouse y aura...", (*) => AbrirAjustesMouse())
     A_TrayMenu.Add("Resaltar selección de texto  (Ctrl+Alt+S)", (*) => AlternarSeleccion())
     A_TrayMenu.Add("Ajustes de selección de texto...", (*) => AbrirAjustesSeleccion())
+    A_TrayMenu.Add("Anotar pantalla  (Ctrl+Alt+A)", AlternarAnotaciones)
+    A_TrayMenu.Add("Ajustes de anotaciones...", AbrirAjustesAnotaciones)
+    A_TrayMenu.Add("Borrar anotaciones  (Ctrl+Alt+X)", BorrarAnotaciones)
     A_TrayMenu.Add()
     A_TrayMenu.Add("Bloquear / desbloquear posición  (Ctrl+Alt+L)", (*) => AlternarBloqueo())
     A_TrayMenu.Add("Más grande  (Ctrl+Alt+RePág)", (*) => CambiarEscala(0.1))
@@ -2035,6 +2068,14 @@ VentanaMostradorDisponible(hwnd := 0) {
 CerrarMostrador(*) {
     global CerrandoMostrador, HwndTeclado, overlay, ih, HistorialBitmap, Redimension
     CerrandoMostrador := true
+    OnMessage(0x0201, PresionarAnotacion, 0)
+    OnMessage(0x0200, MoverAnotacion, 0)
+    OnMessage(0x0202, SoltarAnotacion, 0)
+    OnMessage(0x0204, DerechoAnotacion, 0)
+    OnMessage(0x0020, CursorAnotacion, 0)
+    SetTimer(CerrarAnotaciones, 0)
+    CerrarAnotaciones()
+    CerrarAjustesAnotaciones()
     DetenerSeleccion()
     CerrarAjustesSeleccion()
     HwndTeclado := 0
@@ -2517,6 +2558,8 @@ AbrirMenuAjustes(*) {
     menuAjustes.Add("Mouse y aura...", (*) => AbrirAjustesMouse())
     menuAjustes.Add("Notas...", (*) => AbrirNotas())
     menuAjustes.Add("Selección de texto...", (*) => AbrirAjustesSeleccion())
+    menuAjustes.Add("Anotar pantalla...", IniciarAnotaciones)
+    menuAjustes.Add("Ajustes de anotaciones...", AbrirAjustesAnotaciones)
     menuAjustes.Show()
 }
 
@@ -2600,4 +2643,442 @@ CerrarAjustesSeleccion(*) {
     if IsObject(AjustesSeleccionGui)
         AjustesSeleccionGui.Destroy()
     AjustesSeleccionGui := 0, CamposSeleccion := 0
+}
+
+; Anotaciones temporales. El lienzo deja pasar los clics; sólo el modo de dibujo
+; muestra una superficie de captura independiente y una barra de herramientas.
+IniciarAnotaciones(*) {
+    global AnotModo, AnotCaptura, AnotBarra
+    criticoAnterior := A_IsCritical
+    Critical "On"
+    try {
+        if AnotModo
+            return
+        CrearLienzoAnotaciones()
+        AnotModo := true
+        MostrarCapturaAnotaciones()
+        CrearBarraAnotaciones()
+        A_TrayMenu.Check("Anotar pantalla  (Ctrl+Alt+A)")
+    } catch as err {
+        CerrarAnotaciones()
+        MsgBox("No se pudo abrir el modo de anotación: " err.Message, "Anotaciones")
+    } finally {
+        Critical criticoAnterior
+    }
+}
+
+AlternarAnotaciones(*) {
+    global AnotModo
+    if AnotModo
+        FinalizarAnotaciones()
+    else
+        IniciarAnotaciones()
+}
+
+FinalizarAnotaciones(*) {
+    global AnotModo, AnotActual, AnotCaptura, AnotBarra, AnotHwndCaptura
+    criticoAnterior := A_IsCritical
+    Critical "On"
+    try {
+        AnotModo := false, AnotActual := 0
+        if AnotHwndCaptura && DllCall("GetCapture", "ptr") = AnotHwndCaptura
+            DllCall("ReleaseCapture")
+        if AnotCaptura is Gui
+            AnotCaptura.Hide()
+        if AnotBarra is Gui
+            AnotBarra.Hide()
+        A_TrayMenu.Uncheck("Anotar pantalla  (Ctrl+Alt+A)")
+        SolicitarPintadoAnotaciones()
+    } finally {
+        Critical criticoAnterior
+    }
+}
+
+CrearLienzoAnotaciones() {
+    global AnotLienzo, AnotCaptura, AnotHwndCaptura, AnotPic, AnotDC, AnotBitmap
+    global AnotX, AnotY, AnotW, AnotH, AnotClave
+    if AnotLienzo is Gui
+        return
+    AnotX := SysGet(76), AnotY := SysGet(77)
+    AnotW := SysGet(78), AnotH := SysGet(79)
+    pantalla := DllCall("GetDC", "ptr", 0, "ptr")
+    try {
+        AnotDC := DllCall("CreateCompatibleDC", "ptr", pantalla, "ptr")
+        AnotBitmap := DllCall("CreateCompatibleBitmap", "ptr", pantalla, "int", AnotW, "int", AnotH, "ptr")
+    } finally {
+        DllCall("ReleaseDC", "ptr", 0, "ptr", pantalla)
+    }
+    if !AnotDC || !AnotBitmap
+        throw Error("No se pudo preparar el lienzo de pantalla.")
+    AnotLienzo := Gui("+AlwaysOnTop -Caption +ToolWindow -DPIScale +E0x08000020", "Anotaciones")
+    AnotLienzo.MarginX := 0, AnotLienzo.MarginY := 0
+    AnotLienzo.BackColor := AnotClave
+    AnotPic := AnotLienzo.AddText(Format("x0 y0 w{} h{} +0xE", AnotW, AnotH))
+    WinSetTransColor(AnotClave, AnotLienzo)
+    AnotCaptura := Gui("+AlwaysOnTop -Caption +ToolWindow -DPIScale +E0x08000000", "Dibujar sobre la pantalla")
+    AnotCaptura.BackColor := "000000"
+    WinSetTransparent(1, AnotCaptura)
+    AnotHwndCaptura := AnotCaptura.Hwnd
+    PintarAnotaciones()
+    AnotLienzo.Show(Format("x{} y{} w{} h{} NoActivate", AnotX, AnotY, AnotW, AnotH))
+    SetTimer(ExpirarAnotaciones, 200)
+}
+
+MostrarCapturaAnotaciones() {
+    global AnotCaptura, AnotX, AnotY, AnotW, AnotH
+    AnotCaptura.Show(Format("x{} y{} w{} h{} NoActivate", AnotX, AnotY, AnotW, AnotH))
+}
+
+CrearBarraAnotaciones() {
+    global AnotBarra, AnotCaptura, AnotHerramienta, AnotBotones
+    if AnotBarra is Gui
+        AnotBarra.Destroy()
+    g := Gui("+AlwaysOnTop -Caption +ToolWindow -DPIScale +E0x08000000 +Owner" AnotCaptura.Hwnd, "Herramientas de anotación")
+    AnotBarra := g
+    g.SetFont("s10 cF1F1F1", "Segoe UI")
+    escala := A_ScreenDPI / 96, x := Round(10 * escala)
+    AnotBotones := Map()
+    acciones := [["Trazo", "trazo", 78], ["Flecha", "flecha", 78], ["Óvalo", "ovalo", 78],
+        ["Deshacer", "deshacer", 92], ["Borrar", "borrar", 80], ["⚙", "ajustes", 42], ["Salir", "salir", 65]]
+    for accion in acciones {
+        boton := g.AddButton(Format("x{} y{} w{} h{}", x, Round(6 * escala), Round(accion[3] * escala), Round(32 * escala)), accion[1])
+        boton.OnEvent("Click", AccionBarraAnotacion.Bind(accion[2]))
+        if accion[2] = "trazo" || accion[2] = "flecha" || accion[2] = "ovalo"
+            AnotBotones[accion[2]] := boton
+        x += Round((accion[3] + 6) * escala)
+    }
+    AplicarTemaAjustes(g)
+    MarcarHerramientaAnotacion()
+    punto := Buffer(8, 0)
+    DllCall("GetCursorPos", "ptr", punto)
+    monitor := DllCall("MonitorFromPoint", "int64", NumGet(punto, 0, "int64"), "uint", 2, "ptr")
+    info := Buffer(40, 0)
+    NumPut("uint", 40, info)
+    if DllCall("GetMonitorInfoW", "ptr", monitor, "ptr", info) {
+        izquierda := NumGet(info, 20, "int"), derecha := NumGet(info, 28, "int")
+        arriba := NumGet(info, 24, "int")
+    } else {
+        MonitorGetWorkArea(MonitorGetPrimary(), &izquierda, &arriba, &derecha)
+    }
+    ancho := x + Round(4 * escala)
+    g.Show(Format("x{} y{} w{} h{} NoActivate", Max(izquierda, Round((izquierda + derecha - ancho) / 2)),
+        arriba + Round(12 * escala), ancho, Round(44 * escala)))
+}
+
+AccionBarraAnotacion(accion, *) {
+    switch accion {
+        case "trazo", "flecha", "ovalo": ElegirHerramientaAnotacion(accion)
+        case "deshacer": DeshacerAnotacion()
+        case "borrar": BorrarAnotaciones()
+        case "ajustes": AbrirAjustesAnotaciones()
+        case "salir": FinalizarAnotaciones()
+    }
+}
+
+ElegirHerramientaAnotacion(herramienta) {
+    global AnotHerramienta
+    AnotHerramienta := herramienta
+    MarcarHerramientaAnotacion()
+    GuardarAnotacionesConfig()
+}
+
+MarcarHerramientaAnotacion() {
+    global AnotBotones, AnotHerramienta
+    for clave, boton in AnotBotones
+        boton.Opt(clave = AnotHerramienta ? "+Default" : "-Default")
+}
+
+PuntoAnotacion() {
+    global AnotX, AnotY
+    punto := Buffer(8, 0)
+    DllCall("GetCursorPos", "ptr", punto)
+    return [NumGet(punto, 0, "int") - AnotX, NumGet(punto, 4, "int") - AnotY]
+}
+
+PresionarAnotacion(wParam, lParam, msg, hwnd) {
+    global AnotModo, AnotHwndCaptura, AnotActual, AnotHerramienta, AnotColor, AnotGrosor
+    if !AnotModo || hwnd != AnotHwndCaptura
+        return
+    AnotActual := {herramienta: AnotHerramienta, puntos: [PuntoAnotacion()], color: AnotColor,
+        grosor: Max(2, Round(AnotGrosor * A_ScreenDPI / 96)), vence: 0}
+    DllCall("SetCapture", "ptr", AnotHwndCaptura)
+    SolicitarPintadoAnotaciones()
+    return 0
+}
+
+MoverAnotacion(wParam, lParam, msg, hwnd) {
+    global AnotModo, AnotHwndCaptura, AnotActual
+    if !AnotModo || hwnd != AnotHwndCaptura || !IsObject(AnotActual)
+        return
+    punto := PuntoAnotacion(), puntos := AnotActual.puntos
+    if AnotActual.herramienta = "trazo" {
+        previo := puntos[puntos.Length]
+        if Abs(punto[1] - previo[1]) + Abs(punto[2] - previo[2]) < 2
+            return
+        puntos.Push(punto)
+    } else if puntos.Length = 1 {
+        puntos.Push(punto)
+    } else {
+        puntos[2] := punto
+    }
+    SolicitarPintadoAnotaciones()
+    return 0
+}
+
+SoltarAnotacion(wParam, lParam, msg, hwnd) {
+    global AnotHwndCaptura, AnotActual, AnotTrazos, AnotDuracion
+    if hwnd != AnotHwndCaptura || !IsObject(AnotActual)
+        return
+    MoverAnotacion(wParam, lParam, msg, hwnd)
+    AnotActual.vence := AnotDuracion ? A_TickCount + AnotDuracion * 1000 : 0
+    AnotTrazos.Push(AnotActual)
+    AnotActual := 0
+    if DllCall("GetCapture", "ptr") = AnotHwndCaptura
+        DllCall("ReleaseCapture")
+    SolicitarPintadoAnotaciones()
+    return 0
+}
+
+DerechoAnotacion(wParam, lParam, msg, hwnd) {
+    global AnotModo, AnotHwndCaptura
+    if AnotModo && hwnd = AnotHwndCaptura {
+        DeshacerAnotacion()
+        return 0
+    }
+}
+
+CursorAnotacion(wParam, lParam, msg, hwnd) {
+    global AnotModo, AnotHwndCaptura
+    if AnotModo && hwnd = AnotHwndCaptura {
+        cursor := DllCall("LoadCursorW", "ptr", 0, "ptr", 32515, "ptr")
+        DllCall("SetCursor", "ptr", cursor)
+        return 1
+    }
+}
+
+DeshacerAnotacion(*) {
+    global AnotActual, AnotTrazos, AnotHwndCaptura
+    if IsObject(AnotActual) {
+        AnotActual := 0
+        if AnotHwndCaptura && DllCall("GetCapture", "ptr") = AnotHwndCaptura
+            DllCall("ReleaseCapture")
+    } else if AnotTrazos.Length {
+        AnotTrazos.Pop()
+    }
+    SolicitarPintadoAnotaciones()
+}
+
+BorrarAnotaciones(*) {
+    global AnotTrazos
+    AnotTrazos := []
+    ; Deshacer también cancela un trazo que todavía está bajo el cursor.
+    DeshacerAnotacion()
+}
+
+ExpirarAnotaciones() {
+    global AnotTrazos, AnotActual, AnotModo, AnotHwndCaptura
+    criticoAnterior := A_IsCritical
+    Critical "On"
+    try {
+        ; También termina el trazo si el botón se soltó sobre la barra de herramientas.
+        if IsObject(AnotActual) && !GetKeyState("LButton", "P")
+            SoltarAnotacion(0, 0, 0, AnotHwndCaptura)
+        nuevas := [], cambio := false
+        for trazo in AnotTrazos {
+            if trazo.vence && A_TickCount >= trazo.vence
+                cambio := true
+            else
+                nuevas.Push(trazo)
+        }
+        if cambio {
+            AnotTrazos := nuevas
+            SolicitarPintadoAnotaciones()
+        }
+        if !AnotModo && !AnotTrazos.Length && !IsObject(AnotActual)
+            CerrarAnotaciones()
+    } finally {
+        Critical criticoAnterior
+    }
+}
+
+SolicitarPintadoAnotaciones() {
+    global AnotPendiente, AnotLienzo
+    if !(AnotLienzo is Gui) || AnotPendiente
+        return
+    AnotPendiente := true
+    SetTimer(PintarAnotaciones, -16)
+}
+
+PintarAnotaciones() {
+    global AnotPendiente, AnotLienzo, AnotPic, AnotDC, AnotBitmap, AnotW, AnotH
+    global AnotClave, AnotTrazos, AnotActual, AnotColor
+    criticoAnterior := A_IsCritical
+    Critical "On"
+    try {
+        AnotPendiente := false
+        if !(AnotLienzo is Gui) || !AnotDC || !AnotBitmap
+            return
+        usados := Map("000000", true)
+        usados[AnotColor] := true
+        for trazo in AnotTrazos
+            usados[trazo.color] := true
+        if IsObject(AnotActual)
+            usados[AnotActual.color] := true
+        numero := 1
+        while usados.Has(Format("{:06X}", numero))
+            numero += 1
+        clave := Format("{:06X}", numero)
+        if clave != AnotClave {
+            AnotClave := clave
+            AnotLienzo.BackColor := clave
+            WinSetTransColor(clave, AnotLienzo)
+        }
+        anterior := DllCall("SelectObject", "ptr", AnotDC, "ptr", AnotBitmap, "ptr")
+        pincel := DllCall("CreateSolidBrush", "uint", BGR(AnotClave), "ptr")
+        try {
+            rect := Buffer(16, 0)
+            NumPut("int", AnotW, rect, 8), NumPut("int", AnotH, rect, 12)
+            DllCall("FillRect", "ptr", AnotDC, "ptr", rect, "ptr", pincel)
+            for trazo in AnotTrazos
+                PintarTrazoAnotacion(AnotDC, trazo)
+            if IsObject(AnotActual)
+                PintarTrazoAnotacion(AnotDC, AnotActual)
+        } finally {
+            DllCall("DeleteObject", "ptr", pincel)
+            DllCall("SelectObject", "ptr", AnotDC, "ptr", anterior)
+        }
+        SendMessage(0x172, 0, AnotBitmap, AnotPic)
+        DllCall("RedrawWindow", "ptr", AnotPic.Hwnd, "ptr", 0, "ptr", 0, "uint", 0x101)
+    } finally {
+        Critical criticoAnterior
+    }
+}
+
+PintarTrazoAnotacion(dc, trazo) {
+    for estilo in [["000000", trazo.grosor + 2], [trazo.color, trazo.grosor]] {
+        brocha := Buffer(A_PtrSize = 8 ? 16 : 12, 0)
+        NumPut("uint", BGR(estilo[1]), brocha, 4)
+        lapiz := DllCall("ExtCreatePen", "uint", 0x10000, "uint", estilo[2], "ptr", brocha, "uint", 0, "ptr", 0, "ptr")
+        previo := DllCall("SelectObject", "ptr", dc, "ptr", lapiz, "ptr")
+        pincelPrevio := DllCall("SelectObject", "ptr", dc, "ptr", DllCall("GetStockObject", "int", 5, "ptr"), "ptr")
+        try {
+            puntos := trazo.puntos, primero := puntos[1], ultimo := puntos[puntos.Length]
+            if puntos.Length = 1 {
+                DllCall("MoveToEx", "ptr", dc, "int", primero[1], "int", primero[2], "ptr", 0)
+                DllCall("LineTo", "ptr", dc, "int", primero[1] + 1, "int", primero[2] + 1)
+            } else if trazo.herramienta = "ovalo" {
+                DllCall("Ellipse", "ptr", dc, "int", Min(primero[1], ultimo[1]), "int", Min(primero[2], ultimo[2]),
+                    "int", Max(primero[1], ultimo[1]), "int", Max(primero[2], ultimo[2]))
+            } else {
+                PolilineaAnotacion(dc, puntos)
+                if trazo.herramienta = "flecha" {
+                    angulo := DllCall("msvcrt\atan2", "double", ultimo[2] - primero[2], "double", ultimo[1] - primero[1], "cdecl double")
+                    largo := Max(14, trazo.grosor * 4)
+                    cabeza := [[Round(ultimo[1] - largo * Cos(angulo - 0.5)), Round(ultimo[2] - largo * Sin(angulo - 0.5))],
+                        ultimo, [Round(ultimo[1] - largo * Cos(angulo + 0.5)), Round(ultimo[2] - largo * Sin(angulo + 0.5))]]
+                    PolilineaAnotacion(dc, cabeza)
+                }
+            }
+        } finally {
+            DllCall("SelectObject", "ptr", dc, "ptr", pincelPrevio)
+            DllCall("SelectObject", "ptr", dc, "ptr", previo)
+            DllCall("DeleteObject", "ptr", lapiz)
+        }
+    }
+}
+
+PolilineaAnotacion(dc, puntos) {
+    datos := Buffer(puntos.Length * 8, 0)
+    for i, punto in puntos
+        NumPut("int", punto[1], "int", punto[2], datos, (i - 1) * 8)
+    DllCall("Polyline", "ptr", dc, "ptr", datos, "int", puntos.Length)
+}
+
+CerrarAnotaciones(*) {
+    global AnotModo, AnotHwndCaptura, AnotLienzo, AnotCaptura, AnotBarra, AnotDC, AnotBitmap
+    global AnotActual, AnotTrazos, AnotPendiente, AnotPic, AnotBotones
+    criticoAnterior := A_IsCritical
+    Critical "On"
+    try {
+        SetTimer(PintarAnotaciones, 0)
+        SetTimer(ExpirarAnotaciones, 0)
+        if AnotHwndCaptura && DllCall("GetCapture", "ptr") = AnotHwndCaptura
+            DllCall("ReleaseCapture")
+        AnotModo := false, AnotHwndCaptura := 0, AnotActual := 0, AnotTrazos := [], AnotPendiente := false
+        for ventana in [AnotBarra, AnotCaptura, AnotLienzo]
+            if ventana is Gui
+                ventana.Destroy()
+        AnotBarra := 0, AnotCaptura := 0, AnotLienzo := 0, AnotPic := 0, AnotBotones := Map()
+        if AnotBitmap
+            DllCall("DeleteObject", "ptr", AnotBitmap)
+        if AnotDC
+            DllCall("DeleteDC", "ptr", AnotDC)
+        AnotBitmap := 0, AnotDC := 0
+        try A_TrayMenu.Uncheck("Anotar pantalla  (Ctrl+Alt+A)")
+    } finally {
+        Critical criticoAnterior
+    }
+}
+
+GuardarAnotacionesConfig() {
+    global ArchivoConfig, AnotHerramienta, AnotColor, AnotGrosor, AnotDuracion
+    for clave, valor in Map("Herramienta", AnotHerramienta, "Color", AnotColor, "Grosor", AnotGrosor, "DuracionSeg", AnotDuracion)
+        IniWrite(valor, ArchivoConfig, "Anotaciones", clave)
+}
+
+AbrirAjustesAnotaciones(*) {
+    global AnotAjustes, AnotCampos, AnotColor, AnotGrosor, AnotDuracion, AnotHerramienta
+    FinalizarAnotaciones()
+    if AnotAjustes is Gui {
+        AnotAjustes.Show()
+        return
+    }
+    g := Gui("+AlwaysOnTop", "Anotaciones temporales · Mostrador")
+    AnotAjustes := g
+    g.SetFont("s15 cF1F1F1 bold", "Segoe UI")
+    g.AddText("x18 y16 w475 h30", "Anotaciones temporales")
+    g.SetFont("s10 cF1F1F1 norm", "Segoe UI")
+    g.AddText("x18 y76 w180 h25", "Herramienta inicial")
+    herramienta := g.AddDropDownList("x202 y72 w293", ["Trazo", "Flecha", "Óvalo"])
+    herramienta.Choose(AnotHerramienta = "flecha" ? 2 : AnotHerramienta = "ovalo" ? 3 : 1)
+    color := CampoColorMouse(g, 122, "Color del dibujo", AnotColor)
+    g.AddText("x18 y174 w180 h25", "Grosor del trazo")
+    grosor := g.AddEdit("x202 y170 w80 Number", AnotGrosor)
+    g.AddUpDown("Range2-16", AnotGrosor)
+    g.AddText("x18 y222 w180 h25", "Duración en segundos")
+    duracion := g.AddEdit("x202 y218 w80 Number", AnotDuracion)
+    g.AddUpDown("Range0-60", AnotDuracion)
+    g.SetFont("s9 cAAAAAA", "Segoe UI")
+    g.AddText("x18 y270 w475 h68", "0 conserva las marcas hasta borrarlas. Esc sale del modo dibujo y permite usar las ventanas. Ctrl+Z o clic derecho deshace; Supr borra. Ctrl+Alt+X borra también fuera del modo dibujo.")
+    g.SetFont("s10 cF1F1F1", "Segoe UI")
+    g.AddButton("x222 y358 w173 h34 Default", "Guardar y dibujar").OnEvent("Click", AplicarAjustesAnotaciones)
+    g.AddButton("x405 y358 w90 h34", "Cerrar").OnEvent("Click", CerrarAjustesAnotaciones)
+    AnotCampos := {herramienta: herramienta, color: color, grosor: grosor, duracion: duracion}
+    g.OnEvent("Close", CerrarAjustesAnotaciones)
+    g.OnEvent("Escape", CerrarAjustesAnotaciones)
+    AplicarTemaAjustes(g)
+    g.Show("w515 h412")
+}
+
+AplicarAjustesAnotaciones(*) {
+    global AnotCampos, AnotColor, AnotGrosor, AnotDuracion, AnotHerramienta
+    c := AnotCampos
+    color := ColorMouseValido(c.color.campo.Value)
+    if color = "" || !IsInteger(c.grosor.Value) || !IsInteger(c.duracion.Value) {
+        MsgBox("Revisa el color, el grosor y la duración.", "Anotaciones")
+        return
+    }
+    AnotColor := color, AnotGrosor := Max(2, Min(16, Integer(c.grosor.Value)))
+    AnotDuracion := Max(0, Min(60, Integer(c.duracion.Value)))
+    AnotHerramienta := ["trazo", "flecha", "ovalo"][c.herramienta.Value]
+    GuardarAnotacionesConfig()
+    CerrarAjustesAnotaciones()
+    IniciarAnotaciones()
+}
+
+CerrarAjustesAnotaciones(*) {
+    global AnotAjustes, AnotCampos
+    if AnotAjustes is Gui
+        AnotAjustes.Destroy()
+    AnotAjustes := 0, AnotCampos := 0
 }

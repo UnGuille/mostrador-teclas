@@ -98,6 +98,8 @@ Usa **Ctrl y Alt del lado izquierdo**, para evitar conflictos con Alt Gr.
 | `Ctrl + Alt + B` | Mostrar / ocultar el mouse visual |
 | `Ctrl + Alt + M` | Activar / desactivar el resplandor del cursor |
 | `Ctrl + Alt + S` | Activar / desactivar resaltado de selección |
+| `Ctrl + Alt + A` | Entrar / salir del modo de anotaciones |
+| `Ctrl + Alt + X` | Borrar todas las anotaciones |
 | `Ctrl + Alt + Q` | Cerrar el programa |
 
 Las mismas opciones están disponibles al hacer clic derecho en el icono de la bandeja del sistema.
@@ -215,3 +217,36 @@ Las notas abiertas tienen los controles en la esquina superior derecha, con
 iconos de Windows y minimizar y cerrar al extremo derecho. Su fondo se sincroniza
 con el teclado por defecto. Para elegir otro color, desmarca **Usar el mismo fondo
 del teclado** en los ajustes de la nota y cambia **Fondo personalizado**.
+
+
+## Anotaciones temporales sobre la pantalla
+
+Pulsa **Ctrl izquierdo + Alt izquierdo + A** o **⚙ → Anotar pantalla**.
+Se abre una barra con **Trazo**, **Flecha**, **Óvalo**, **Deshacer**, **Borrar**,
+ajustes y **Salir**. Arrastra con el botón izquierdo para dibujar. El trazo libre
+también permite subrayar texto. Las marcas se dibujan sobre la pantalla y permanecen
+en su posición aunque cambie el contenido de las ventanas.
+
+Mientras el modo de dibujo está activo, el ratón dibuja en la capa de anotaciones.
+Pulsa **Esc** o **Salir** para volver a usar las ventanas. Las marcas terminadas
+siguen visibles hasta que se borran o cumplen su duración.
+
+| Control | Acción |
+|---|---|
+| `1`, `2`, `3` en modo dibujo | Trazo, flecha, óvalo |
+| `Ctrl + Z` o clic derecho en el lienzo | Deshacer el último dibujo |
+| `Supr` en modo dibujo | Borrar todos los dibujos |
+| `Esc` | Salir del modo dibujo |
+| `Ctrl izquierdo + Alt izquierdo + X` | Borrar dibujos también fuera del modo dibujo |
+
+En **⚙ → Ajustes de anotaciones**, o en el engranaje de la barra, puedes cambiar
+el color, el grosor, la herramienta inicial y el tiempo de permanencia. Por defecto
+se usa rojo con contorno oscuro y cada dibujo desaparece **8 segundos** después
+de soltar el ratón. Una duración de **0** conserva las marcas hasta borrarlas.
+**Guardar y dibujar** aplica los cambios y entra al modo de dibujo. El nuevo estilo
+y la duración se aplican a los dibujos siguientes.
+
+Las preferencias se guardan en `[Anotaciones]` de `overlay-config.ini`. Los dibujos
+permanecen en memoria. Al cerrar el programa o cambiar la distribución de pantallas
+se borran. El modo también funciona con el teclado minimizado y cubre las pantallas
+conectadas. No requiere otro archivo además de los componentes ya incluidos.
