@@ -1,6 +1,6 @@
 # Mostrador de Teclas
 
-Teclado y mouse visuales en pantalla para clases, tutoriales y demostraciones. Muestra las teclas y combinaciones que pulsas, anima su movimiento y ayuda a seguir el cursor.
+Herramientas en pantalla para clases virtuales, proyecciones, tutoriales y demostraciones. Muestra las teclas y combinaciones, ayuda a seguir el cursor y permite explicar con notas, dibujos, textos y un temporizador. Todo en una interfaz oscura y compacta.
 
 Hecho con [AutoHotkey v2](https://www.autohotkey.com/) para Windows.
 
@@ -27,6 +27,38 @@ y acentos rojos. Las teclas conservan su relieve y animación de pulsación.
 Sin configuración previa, el mouse visual y el halo del cursor están activados. Puedes apagarlos de forma independiente; tu preferencia queda guardada.
 
 El **autoocultado solo actúa cuando el mostrador está bloqueado** y esa opción está activada. Tras unos segundos sin actividad se oculta y vuelve a aparecer al pulsar una tecla o usar los botones o la rueda del mouse. Mientras está desbloqueado permanece visible para facilitar su colocación. El halo del cursor funciona independientemente del autoocultado.
+
+## Panel de clase
+
+Abre **⚙ → Panel de clase** o pulsa **Ctrl izquierdo + Alt izquierdo + C**.
+También está en la bandeja y en el menú del icono del teclado minimizado.
+Reúne los controles para preparar una actividad sin llenar la pantalla de botones:
+
+- **Temporizador:** elige 1, 3, 5 o 10 minutos, escribe una duración entre 1 y 180,
+  añade un minuto, pausa, continúa o reinicia. **Ctrl + Alt + P** inicia o pausa
+  sin abrir el panel. Cambiar un tiempo rápido prepara una nueva cuenta sin iniciarla.
+- **Reloj flotante:** sigue visible al cerrar el panel o minimizar el teclado.
+  Arrástralo a cualquier pantalla y haz clic derecho para abrir los controles.
+  En los últimos diez segundos usa ámbar; al terminar, rojo y «Fin».
+  Puedes ocultarlo o habilitar un aviso sonoro, desactivado por defecto.
+  Reiniciar detiene la cuenta y retira el reloj hasta que vuelvas a iniciarla.
+- **Foco del cursor:** oscurece el escritorio y deja un círculo claro alrededor
+  del puntero para centrar la atención. Ajusta el radio (80–420 píxeles) y la
+  intensidad (15–80 %) desde el panel. **Ctrl + Alt + E** lo enciende o apaga.
+  Deja pasar los clics y funciona también con el teclado minimizado.
+- **Accesos rápidos:** minimizar o expandir el teclado, activar o apagar el aura,
+  dibujar y editar las notas. El aura y el foco se controlan por separado.
+
+Las preferencias se guardan en `[Clase]` de `overlay-config.ini`, incluida la
+posición del reloj. Al desconectar una pantalla, el reloj y el panel se recolocan
+en una disponible. El temporizador y el foco se inician apagados al abrir el programa.
+El temporizador usa el tiempo transcurrido del sistema; suspender el equipo no pausa la cuenta.
+
+Para una clase por videollamada, comparte **la pantalla completa** donde uses estas
+ayudas: compartir sólo una ventana puede dejar fuera el teclado, las notas, el reloj
+y los dibujos flotantes. El resultado depende del programa de videollamada y del
+modo de captura. En una proyección con escritorio extendido, coloca las ayudas
+en la pantalla del proyector; el foco y el lienzo abarcan las pantallas conectadas.
 
 ## Personalizar el mouse y el aura
 
@@ -100,6 +132,9 @@ Usa **Ctrl y Alt del lado izquierdo**, para evitar conflictos con Alt Gr.
 | `Ctrl + Alt + S` | Activar / desactivar resaltado de selección |
 | `Ctrl + Alt + A` | Entrar / salir del modo de anotaciones |
 | `Ctrl + Alt + X` | Borrar todas las anotaciones |
+| `Ctrl + Alt + C` | Abrir el panel de clase |
+| `Ctrl + Alt + E` | Activar / desactivar el foco del cursor |
+| `Ctrl + Alt + P` | Iniciar, pausar o continuar el temporizador |
 | `Ctrl + Alt + Q` | Cerrar el programa |
 
 Las mismas opciones están disponibles al hacer clic derecho en el icono de la bandeja del sistema.
@@ -228,8 +263,17 @@ herramientas, colores y acciones. Arrastra su cabecera para moverla.
 - **Trazo, Flecha, Óvalo, Marco, Línea y Texto** para dibujar, subrayar o señalar un área.
 - **Colores rápidos** y botones **− / +** para cambiar el grosor desde la paleta.
 - **Deshacer y Rehacer**, también después de **Borrar todo**.
-- **Volver** o **Esc** para salir del dibujo y usar las ventanas.
+- **Usar escritorio / Dibujar** para alternar entre manejar las ventanas y anotar.
+- **Volver** o **Esc** para salir del dibujo y ocultar la paleta.
 - **⚙** para elegir cualquier color y modificar la herramienta inicial y la duración.
+
+El botón **Usar escritorio** pausa la captura del dibujo y deja la paleta
+visible: puedes cambiar de diapositiva, desplazarte o usar cualquier programa.
+Pulsa **Dibujar** para continuar desde la misma posición de la paleta. Las marcas
+siguen visibles mientras dure su tiempo configurado; la pausa permite que los clics
+lleguen a las aplicaciones. También puedes arrastrar la cabecera mientras está
+pausado. **Volver** o cerrar la paleta termina el modo; **Esc** conserva esa función
+cuando estás dibujando. Los atajos de herramientas quedan libres al usar el escritorio.
 
 Mientras el modo está activo, arrastra con el botón izquierdo para dibujar sobre
 la pantalla. Las marcas permanecen en su posición aunque cambie el contenido de

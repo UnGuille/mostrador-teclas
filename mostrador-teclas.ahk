@@ -30,6 +30,9 @@
 ;    Ctrl+Alt+S       -> Activar / desactivar resaltado de seleccion
 ;    Ctrl+Alt+A       -> Entrar / salir de anotaciones temporales
 ;    Ctrl+Alt+X       -> Borrar anotaciones
+;    Ctrl+Alt+C       -> Panel de clase
+;    Ctrl+Alt+E       -> Activar / desactivar foco del cursor
+;    Ctrl+Alt+P       -> Iniciar / pausar el temporizador
 ;    Ctrl+Alt+Q       -> Cerrar
 ;  Tambien hay un menu en el icono de la bandeja del sistema.
 ; ============================================================
@@ -111,6 +114,21 @@ global SeleccionSombra := ColorMouseValido(IniRead(ArchivoConfig, "Seleccion", "
 global SeleccionGrosor := Max(1, Min(6, Integer(IniRead(ArchivoConfig, "Seleccion", "Grosor", "3"))))
 global SeleccionNegrita := Integer(IniRead(ArchivoConfig, "Seleccion", "Negrita", "1"))
 global SeleccionPid := 0, AjustesSeleccionGui := 0, CamposSeleccion := 0
+; Las sesiones de clase no se reanudan automáticamente al abrir el programa.
+global ClaseGui := 0, ClaseControles := 0
+global ClaseMinutos := LeerEnteroClase("Minutos", 5, 1, 180)
+global ClaseRelojMostrar := LeerEnteroClase("RelojMostrar", 1, 0, 1)
+global ClaseAvisoSonoro := LeerEnteroClase("AvisoSonoro", 0, 0, 1)
+global ClaseEnMarcha := false, ClaseFinTick := 0, ClaseRestanteMs := ClaseMinutos * 60000
+global ClaseTerminado := false, ClaseRelojSolicitado := false, ClaseUltimoColor := ""
+global RelojClaseGui := 0, RelojClaseCuenta := 0, RelojClaseEstado := 0
+global ClaseRelojX := IniRead(ArchivoConfig, "Clase", "RelojX", "")
+global ClaseRelojY := IniRead(ArchivoConfig, "Clase", "RelojY", "")
+global FocoClaseActivo := false, FocoClaseGui := 0, FocoX := "", FocoY := ""
+global FocoRadio := LeerEnteroClase("RadioFoco", 180, 80, 420)
+global FocoOpacidad := LeerEnteroClase("OpacidadFoco", 55, 15, 80)
+global FocoVirtualX := 0, FocoVirtualY := 0, FocoVirtualW := 0, FocoVirtualH := 0
+global AnotPausa := false, AnotPausaBoton := 0
 global AnotModo := false, AnotLienzo := 0, AnotCaptura := 0, AnotBarra := 0, AnotPic := 0
 global AnotAjustes := 0, AnotCampos := 0, AnotHwndCaptura := 0, AnotBotones := Map()
 global AnotColores := Map(), AnotArrastre := Map(), AnotEstado := 0, AnotGrosorTexto := 0
@@ -161,6 +179,8 @@ try {
     AplicarModoSeleccion()
     ActualizarMenuSeleccion()
 
+    OnMessage(0x0201, ArrastrarRelojClase)
+    OnMessage(0x0232, GuardarPosicionRelojClase)
     OnMessage(0x0201, AlPresionarMouse)    ; WM_LBUTTONDOWN -> arrastrar
     OnMessage(0x0232, AlTerminarArrastre)  ; WM_EXITSIZEMOVE -> guardar posicion
 
@@ -201,6 +221,9 @@ try {
 <^<!s::AlternarSeleccion()
 <^<!a::AlternarAnotaciones()
 <^<!x::BorrarAnotaciones()
+<^<!c::AbrirPanelClase()
+<^<!e::AlternarFocoClase()
+<^<!p::AlternarTemporizadorClase()
 <^<!q::ExitApp()
 
 #HotIf EditorTextoAnotacionActivo()
@@ -1019,6 +1042,7 @@ AlCambiarPantallas(wParam, lParam, msg, hwnd) {
     SetTimer(CerrarAnotaciones, -1)
     ; Esperar a que Windows termine de actualizar la distribución de pantallas.
     SetTimer(ReubicarMostrador, -300)
+    SetTimer(ActualizarPantallasClase, -350)
 }
 
 ReubicarMostrador() {
@@ -1056,9 +1080,481 @@ GuardarConfig() {
         IniWrite(valor, ArchivoConfig, "Mouse", clave)
 }
 
+; ============================================================
+; PANEL DE CLASE · temporizador y foco del cursor
+; Las ayudas son independientes del teclado y no envían datos.
+; ============================================================
+
+LeerEnteroClase(clave, defecto, minimo, maximo) {
+    global ArchivoConfig
+    valor := IniRead(ArchivoConfig, "Clase", clave, defecto)
+    return IsInteger(valor) ? Max(minimo, Min(maximo, Integer(valor))) : defecto
+}
+
+RectClase(x, y, w, h) {
+    s := A_ScreenDPI / 96
+    return Format("x{} y{} w{} h{}", Round(x * s), Round(y * s), Round(w * s), Round(h * s))
+}
+
+AbrirPanelClase(*) {
+    global ClaseGui, ClaseControles, ClaseMinutos, ClaseRelojMostrar, ClaseAvisoSonoro
+    global FocoRadio, FocoOpacidad, ClaseUltimoColor, CerrandoMostrador, AnotModo
+    if CerrandoMostrador
+        return
+    ; Liberar la captura y los atajos de dibujo para poder usar los controles.
+    if AnotModo
+        PausarAnotaciones()
+    if ClaseGui is Gui {
+        ClaseGui.Show()
+        return
+    }
+    g := Gui("+AlwaysOnTop +ToolWindow -DPIScale", "Panel de clase")
+    ClaseGui := g
+    g.BackColor := "0F0F0F"
+    g.SetFont("s10 cAAAAAA", "Segoe UI")
+    g.AddText(RectClase(18, 16, 382, 22), "TEMPORIZADOR")
+    g.SetFont("s32 cF1F1F1 bold", "Segoe UI")
+    cuenta := g.AddText(RectClase(18, 42, 230, 52), "")
+    g.SetFont("s10 cAAAAAA norm", "Segoe UI")
+    estado := g.AddText(RectClase(260, 54, 140, 26) " Right +0x200", "Listo")
+    for i, minutos in [1, 3, 5, 10]
+        BotonPaletaAnotacion(g, minutos " min", 18 + (i - 1) * 68, 104, 60, 30, ElegirMinutosClase.Bind(minutos))
+    BotonPaletaAnotacion(g, "+1 min", 290, 104, 110, 30, SumarMinutoClase)
+    g.SetFont("s10 cF1F1F1", "Segoe UI")
+    minutosEdit := g.AddEdit(RectClase(18, 148, 68, 30) " Number", ClaseMinutos)
+    minutosPasos := g.AddUpDown("Range1-180", ClaseMinutos)
+    g.AddText(RectClase(94, 148, 42, 30) " +0x200", "min")
+    iniciar := BotonPaletaAnotacion(g, "Iniciar", 144, 148, 120, 30, AlternarTemporizadorClase, "45232B", "FF96A8")
+    BotonPaletaAnotacion(g, "Reiniciar", 274, 148, 126, 30, ReiniciarTemporizadorClase)
+    g.SetFont("s10 cF1F1F1", "Segoe UI")
+    reloj := g.AddCheckbox(RectClase(18, 194, 192, 26), "Reloj flotante")
+    reloj.Value := ClaseRelojMostrar
+    sonido := g.AddCheckbox(RectClase(220, 194, 180, 26), "Sonido al terminar")
+    sonido.Value := ClaseAvisoSonoro
+    reloj.OnEvent("Click", PreferenciasPanelClase)
+    sonido.OnEvent("Click", PreferenciasPanelClase)
+    g.AddText(RectClase(18, 234, 382, 1) " Background303030")
+    foco := BotonPaletaAnotacion(g, "Activar foco", 18, 250, 166, 32, AlternarFocoClase)
+    g.SetFont("s9 c909090", "Segoe UI")
+    g.AddText(RectClase(196, 250, 204, 32) " Right +0x200", "Ctrl + Alt + E")
+    g.SetFont("s10 cD6D6D6", "Segoe UI")
+    g.AddText(RectClase(18, 298, 78, 26), "Radio")
+    radio := g.AddSlider(RectClase(96, 290, 228, 34) " Range80-420 ToolTip", FocoRadio)
+    radioTexto := g.AddText(RectClase(330, 298, 70, 26) " Right", FocoRadio " px")
+    g.AddText(RectClase(18, 338, 78, 26), "Oscurecer")
+    opacidad := g.AddSlider(RectClase(96, 330, 228, 34) " Range15-80 ToolTip", FocoOpacidad)
+    opacidadTexto := g.AddText(RectClase(330, 338, 70, 26) " Right", FocoOpacidad " %")
+    radio.OnEvent("Change", CambiarFocoDesdePanel)
+    opacidad.OnEvent("Change", CambiarFocoDesdePanel)
+    teclado := BotonPaletaAnotacion(g, "Teclado", 18, 390, 88, 32, (*) => AlternarMinimizado())
+    aura := BotonPaletaAnotacion(g, "Aura", 116, 390, 88, 32, (*) => AlternarResplandorMouse())
+    BotonPaletaAnotacion(g, "Dibujar", 214, 390, 88, 32, IniciarAnotaciones)
+    BotonPaletaAnotacion(g, "Notas", 312, 390, 88, 32, (*) => EditarNotaDirecta())
+    ClaseControles := {cuenta: cuenta, estado: estado, minutos: minutosEdit, pasos: minutosPasos, iniciar: iniciar,
+        reloj: reloj, sonido: sonido, foco: foco, radio: radio, radioTexto: radioTexto,
+        opacidad: opacidad, opacidadTexto: opacidadTexto, teclado: teclado, aura: aura}
+    g.OnEvent("Close", CerrarPanelClase)
+    g.OnEvent("Escape", CerrarPanelClase)
+    AplicarTemaAjustes(g)
+    ClaseUltimoColor := ""
+    ActualizarClase()
+    g.Show(Format("w{} h{}", Round(418 * A_ScreenDPI / 96), Round(440 * A_ScreenDPI / 96)))
+    SetTimer(ActualizarClase, 250)
+}
+
+CerrarPanelClase(*) {
+    global ClaseGui, ClaseControles, CerrandoMostrador
+    criticoAnterior := A_IsCritical
+    Critical "On"
+    try {
+        if !CerrandoMostrador && (ClaseGui is Gui) {
+            LeerDuracionPanelClase()
+            GuardarClaseConfig()
+        }
+        g := ClaseGui
+        ClaseGui := 0, ClaseControles := 0
+        if g is Gui
+            g.Destroy()
+        if !CerrandoMostrador
+            ActualizarClase()
+    } finally {
+        Critical criticoAnterior
+    }
+}
+
+PreferenciasPanelClase(*) {
+    global ClaseControles, ClaseRelojMostrar, ClaseAvisoSonoro
+    if !IsObject(ClaseControles)
+        return
+    ClaseRelojMostrar := ClaseControles.reloj.Value
+    ClaseAvisoSonoro := ClaseControles.sonido.Value
+    GuardarClaseConfig()
+    ActualizarClase()
+}
+
+LeerDuracionPanelClase() {
+    global ClaseControles, ClaseMinutos, ClaseEnMarcha, ClaseRestanteMs, ClaseTerminado
+    if !IsObject(ClaseControles) || ClaseEnMarcha
+        return
+    valor := ClaseControles.minutos.Value
+    minutos := IsInteger(valor) ? Max(1, Min(180, Integer(valor))) : ClaseMinutos
+    ClaseControles.minutos.Value := minutos
+    if minutos != ClaseMinutos {
+        ClaseMinutos := minutos, ClaseRestanteMs := minutos * 60000, ClaseTerminado := false
+    }
+}
+
+ElegirMinutosClase(minutos, *) {
+    global ClaseMinutos, ClaseRestanteMs, ClaseEnMarcha, ClaseTerminado, ClaseRelojSolicitado, ClaseControles
+    ClaseMinutos := minutos, ClaseRestanteMs := minutos * 60000
+    ClaseEnMarcha := false, ClaseTerminado := false, ClaseRelojSolicitado := false
+    if IsObject(ClaseControles)
+        ClaseControles.minutos.Value := minutos
+    GuardarClaseConfig()
+    ActualizarClase()
+}
+
+AhoraClase() => DllCall("GetTickCount64", "uint64")
+
+AlternarTemporizadorClase(*) {
+    global ClaseEnMarcha, ClaseFinTick, ClaseRestanteMs, ClaseTerminado, ClaseRelojSolicitado, ClaseMinutos, CerrandoMostrador
+    if CerrandoMostrador
+        return
+    criticoAnterior := A_IsCritical
+    Critical "On"
+    try {
+        if ClaseEnMarcha {
+            ClaseRestanteMs := Max(0, ClaseFinTick - AhoraClase())
+            ClaseEnMarcha := false
+            ClaseTerminado := ClaseRestanteMs = 0
+        } else {
+            LeerDuracionPanelClase()
+            if ClaseRestanteMs <= 0
+                ClaseRestanteMs := ClaseMinutos * 60000
+            ClaseTerminado := false, ClaseEnMarcha := true, ClaseRelojSolicitado := true
+            ClaseFinTick := AhoraClase() + ClaseRestanteMs
+            SetTimer(ActualizarClase, 250)
+        }
+        GuardarClaseConfig()
+        ActualizarClase()
+    } finally {
+        Critical criticoAnterior
+    }
+}
+
+ReiniciarTemporizadorClase(*) {
+    global ClaseEnMarcha, ClaseTerminado, ClaseRestanteMs, ClaseMinutos, ClaseRelojSolicitado
+    ClaseEnMarcha := false
+    LeerDuracionPanelClase()
+    ClaseRestanteMs := ClaseMinutos * 60000, ClaseTerminado := false, ClaseRelojSolicitado := false
+    GuardarClaseConfig()
+    ActualizarClase()
+}
+
+SumarMinutoClase(*) {
+    global ClaseEnMarcha, ClaseFinTick, ClaseRestanteMs, ClaseTerminado
+    if ClaseEnMarcha {
+        ahora := AhoraClase()
+        ClaseFinTick := ahora + Min(180 * 60000, Max(0, ClaseFinTick - ahora) + 60000)
+    } else {
+        ClaseRestanteMs := Min(180 * 60000, ClaseRestanteMs + 60000)
+    }
+    ClaseTerminado := false
+    ActualizarClase()
+}
+
+TextoControlClase(control, texto) {
+    if control.Text != texto
+        control.Text := texto
+}
+
+ActualizarClase() {
+    global ClaseGui, ClaseControles, ClaseEnMarcha, ClaseFinTick, ClaseRestanteMs, ClaseTerminado
+    global ClaseRelojSolicitado, ClaseRelojMostrar, ClaseAvisoSonoro, ClaseUltimoColor
+    global RelojClaseGui, RelojClaseCuenta, RelojClaseEstado, FocoClaseActivo, Minimizado, ResplandorMouse, CerrandoMostrador
+    if CerrandoMostrador
+        return
+    criticoAnterior := A_IsCritical
+    Critical "On"
+    try {
+        aviso := false
+        if ClaseEnMarcha {
+            ClaseRestanteMs := Max(0, ClaseFinTick - AhoraClase())
+            if ClaseRestanteMs = 0 {
+                ClaseEnMarcha := false, ClaseTerminado := true
+                aviso := ClaseAvisoSonoro
+            }
+        }
+        segundos := Ceil(ClaseRestanteMs / 1000)
+        cuenta := Format("{:02}:{:02}", segundos // 60, Mod(segundos, 60))
+        estado := ClaseTerminado ? "Tiempo cumplido" : ClaseEnMarcha ? "En curso" : ClaseRelojSolicitado ? "En pausa" : "Listo"
+        color := ClaseTerminado ? "FF637D" : (ClaseEnMarcha && segundos <= 10) ? "FFC857" : "F1F1F1"
+        if ClaseRelojMostrar && ClaseRelojSolicitado {
+            CrearRelojClase()
+            TextoControlClase(RelojClaseCuenta, cuenta)
+            TextoControlClase(RelojClaseEstado, ClaseTerminado ? "Fin" : ClaseEnMarcha ? "Clase" : "Pausa")
+            if !DllCall("IsWindowVisible", "ptr", RelojClaseGui.Hwnd)
+                RelojClaseGui.Show("NoActivate")
+        } else if RelojClaseGui is Gui {
+            RelojClaseGui.Hide()
+        }
+        if IsObject(ClaseControles) {
+            c := ClaseControles
+            TextoControlClase(c.cuenta, cuenta)
+            TextoControlClase(c.estado, estado)
+            TextoControlClase(c.iniciar, ClaseEnMarcha ? "Pausar" : ClaseRelojSolicitado && !ClaseTerminado ? "Continuar" : "Iniciar")
+            TextoControlClase(c.foco, FocoClaseActivo ? "Apagar foco" : "Activar foco")
+            TextoControlClase(c.teclado, Minimizado ? "Expandir" : "Minimizar")
+            TextoControlClase(c.aura, ResplandorMouse ? "Apagar aura" : "Activar aura")
+            if c.minutos.Enabled = ClaseEnMarcha
+                c.minutos.Enabled := !ClaseEnMarcha
+            if c.pasos.Enabled = ClaseEnMarcha
+                c.pasos.Enabled := !ClaseEnMarcha
+        }
+        if color != ClaseUltimoColor {
+            ClaseUltimoColor := color
+            if IsObject(ClaseControles)
+                ClaseControles.cuenta.SetFont("c" color)
+            if RelojClaseGui is Gui
+                RelojClaseCuenta.SetFont("c" color)
+        }
+        if !ClaseEnMarcha && !(ClaseGui is Gui)
+            SetTimer(ActualizarClase, 0)
+        if aviso
+            SetTimer(AvisarFinClase, -1)
+    } finally {
+        Critical criticoAnterior
+    }
+}
+
+AvisarFinClase() {
+    global CerrandoMostrador, ClaseTerminado, ClaseAvisoSonoro
+    if !CerrandoMostrador && ClaseTerminado && ClaseAvisoSonoro
+        SoundBeep(880, 180)
+}
+
+CrearRelojClase() {
+    global RelojClaseGui, RelojClaseCuenta, RelojClaseEstado, ClaseRelojX, ClaseRelojY, ClaseUltimoColor
+    if RelojClaseGui is Gui
+        return
+    g := Gui("+AlwaysOnTop -Caption +ToolWindow -DPIScale +E0x08000000", "Reloj de clase")
+    RelojClaseGui := g
+    g.BackColor := "0F0F0F"
+    g.SetFont("s23 cF1F1F1 bold", "Segoe UI")
+    RelojClaseCuenta := g.AddText(RectClase(12, 4, 128, 40) " +0x100", "")
+    g.SetFont("s8 cAAAAAA norm", "Segoe UI")
+    RelojClaseEstado := g.AddText(RectClase(12, 44, 128, 18) " +0x100", "Clase")
+    g.OnEvent("ContextMenu", AbrirPanelClase)
+    w := Round(154 * A_ScreenDPI / 96), h := Round(68 * A_ScreenDPI / 96)
+    MonitorGetWorkArea(MonitorGetPrimary(), &l, &t, &r, &b)
+    x := IsInteger(ClaseRelojX) ? Integer(ClaseRelojX) : r - w - 20
+    y := IsInteger(ClaseRelojY) ? Integer(ClaseRelojY) : t + 20
+    pos := PosicionEnPantalla(x, y, w, h)
+    g.Show(Format("Hide x{} y{} w{} h{}", pos[1], pos[2], w, h))
+    RedondearNota(g, w, h, Round(12 * A_ScreenDPI / 96))
+    ClaseUltimoColor := ""
+}
+
+ArrastrarRelojClase(wParam, lParam, msg, hwnd) {
+    global RelojClaseGui, CerrandoMostrador
+    if CerrandoMostrador || !(RelojClaseGui is Gui)
+        return
+    if DllCall("GetAncestor", "ptr", hwnd, "uint", 2, "ptr") != RelojClaseGui.Hwnd
+        return
+    DllCall("ReleaseCapture")
+    PostMessage(0x00A1, 2, 0, , "ahk_id " RelojClaseGui.Hwnd)
+    return 0
+}
+
+GuardarPosicionRelojClase(wParam, lParam, msg, hwnd) {
+    global RelojClaseGui, ClaseRelojX, ClaseRelojY, ArchivoConfig, CerrandoMostrador
+    if CerrandoMostrador || !(RelojClaseGui is Gui) || hwnd != RelojClaseGui.Hwnd
+        return
+    RelojClaseGui.GetPos(&x, &y, &w, &h)
+    pos := PosicionEnPantalla(x, y, w, h)
+    RelojClaseGui.Move(pos[1], pos[2])
+    ClaseRelojX := pos[1], ClaseRelojY := pos[2]
+    IniWrite(ClaseRelojX, ArchivoConfig, "Clase", "RelojX")
+    IniWrite(ClaseRelojY, ArchivoConfig, "Clase", "RelojY")
+}
+
+CambiarFocoDesdePanel(*) {
+    global ClaseControles, FocoRadio, FocoOpacidad, FocoClaseGui, FocoX, FocoY
+    if !IsObject(ClaseControles)
+        return
+    FocoRadio := ClaseControles.radio.Value, FocoOpacidad := ClaseControles.opacidad.Value
+    TextoControlClase(ClaseControles.radioTexto, FocoRadio " px")
+    TextoControlClase(ClaseControles.opacidadTexto, FocoOpacidad " %")
+    if FocoClaseGui is Gui {
+        WinSetTransparent(Round(FocoOpacidad * 255 / 100), "ahk_id " FocoClaseGui.Hwnd)
+        FocoX := "", FocoY := ""
+        ActualizarFocoClase()
+    }
+}
+
+AlternarFocoClase(*) {
+    global FocoClaseActivo, CerrandoMostrador
+    if CerrandoMostrador
+        return
+    criticoAnterior := A_IsCritical
+    Critical "On"
+    try {
+        if FocoClaseActivo {
+            FocoClaseActivo := false
+            DestruirFocoClase()
+        } else {
+            FocoClaseActivo := true
+            try CrearFocoClase()
+            catch as err {
+                FocoClaseActivo := false
+                DestruirFocoClase()
+                MsgBox("No se pudo activar el foco: " err.Message, "Panel de clase")
+                return
+            }
+        }
+        try A_TrayMenu.ToggleCheck("Foco del cursor  (Ctrl+Alt+E)")
+        GuardarClaseConfig()
+        ActualizarClase()
+    } finally {
+        Critical criticoAnterior
+    }
+}
+
+CrearFocoClase() {
+    global FocoClaseGui, FocoOpacidad, FocoVirtualX, FocoVirtualY, FocoVirtualW, FocoVirtualH
+    DestruirFocoClase()
+    FocoVirtualX := SysGet(76), FocoVirtualY := SysGet(77)
+    FocoVirtualW := SysGet(78), FocoVirtualH := SysGet(79)
+    if FocoVirtualW < 1 || FocoVirtualH < 1
+        throw Error("Windows todavía no facilita las dimensiones de la pantalla.")
+    g := Gui("+AlwaysOnTop -Caption +ToolWindow -DPIScale +E0x08080020", "Foco de clase")
+    FocoClaseGui := g
+    g.BackColor := "000000"
+    g.Move(FocoVirtualX, FocoVirtualY, FocoVirtualW, FocoVirtualH)
+    WinSetTransparent(Round(FocoOpacidad * 255 / 100), "ahk_id " g.Hwnd)
+    if !ActualizarFocoClase()
+        throw Error("No se pudo preparar el foco del cursor.")
+    g.Show(Format("x{} y{} w{} h{} NoActivate", FocoVirtualX, FocoVirtualY, FocoVirtualW, FocoVirtualH))
+    ElevarAyudasClase()
+    SetTimer(ActualizarFocoClase, 33)
+}
+
+ActualizarFocoClase() {
+    global FocoClaseGui, FocoClaseActivo, FocoRadio, FocoX, FocoY
+    global FocoVirtualX, FocoVirtualY, FocoVirtualW, FocoVirtualH, CerrandoMostrador
+    if CerrandoMostrador || !FocoClaseActivo || !(FocoClaseGui is Gui)
+        return false
+    criticoAnterior := A_IsCritical
+    Critical "On"
+    try {
+        punto := Buffer(8, 0)
+        if !DllCall("GetCursorPos", "ptr", punto)
+            return false
+        x := NumGet(punto, 0, "int") - FocoVirtualX
+        y := NumGet(punto, 4, "int") - FocoVirtualY
+        if x = FocoX && y = FocoY
+            return true
+        region := DllCall("CreateRectRgn", "int", 0, "int", 0, "int", FocoVirtualW, "int", FocoVirtualH, "ptr")
+        hueco := DllCall("CreateEllipticRgn", "int", x - FocoRadio, "int", y - FocoRadio,
+            "int", x + FocoRadio, "int", y + FocoRadio, "ptr")
+        if !region || !hueco {
+            if region
+                DllCall("DeleteObject", "ptr", region)
+            if hueco
+                DllCall("DeleteObject", "ptr", hueco)
+            return false
+        }
+        resultado := DllCall("CombineRgn", "ptr", region, "ptr", region, "ptr", hueco, "int", 4)
+        DllCall("DeleteObject", "ptr", hueco)
+        if !resultado || !DllCall("SetWindowRgn", "ptr", FocoClaseGui.Hwnd, "ptr", region, "int", true) {
+            DllCall("DeleteObject", "ptr", region)
+            return false
+        }
+        ; Windows pasa a ser propietario de la región asignada.
+        FocoX := x, FocoY := y
+        return true
+    } finally {
+        Critical criticoAnterior
+    }
+}
+
+ElevarAyudasClase() {
+    global overlay, ControlMinimizar, HaloMouse, PanelNota, RelojClaseGui, ClaseGui
+    global AnotLienzo, AnotCaptura, AnotBarra, AnotTextoGui, AnotAjustes, AjustesMouseGui, NotasGui, AjustesSeleccionGui
+    for g in [overlay, ControlMinimizar, HaloMouse, PanelNota, RelojClaseGui,
+        AnotLienzo, AnotCaptura, AnotBarra, AnotTextoGui, AnotAjustes, AjustesMouseGui, NotasGui, AjustesSeleccionGui, ClaseGui] {
+        if (g is Gui) && DllCall("IsWindowVisible", "ptr", g.Hwnd)
+            DllCall("SetWindowPos", "ptr", g.Hwnd, "ptr", -1, "int", 0, "int", 0, "int", 0, "int", 0, "uint", 0x0013)
+    }
+}
+
+DestruirFocoClase() {
+    global FocoClaseGui, FocoX, FocoY
+    SetTimer(ActualizarFocoClase, 0)
+    g := FocoClaseGui
+    FocoClaseGui := 0, FocoX := "", FocoY := ""
+    if g is Gui
+        g.Destroy()
+}
+
+ActualizarPantallasClase() {
+    global FocoClaseActivo, RelojClaseGui, ClaseGui, CerrandoMostrador
+    if CerrandoMostrador
+        return
+    criticoAnterior := A_IsCritical
+    Critical "On"
+    try {
+        if FocoClaseActivo {
+            try CrearFocoClase()
+            catch {
+                FocoClaseActivo := false
+                DestruirFocoClase()
+                try A_TrayMenu.Uncheck("Foco del cursor  (Ctrl+Alt+E)")
+                ActualizarClase()
+            }
+        }
+        for g in [RelojClaseGui, ClaseGui] {
+            if !(g is Gui)
+                continue
+            g.GetPos(&x, &y, &w, &h)
+            pos := PosicionEnPantalla(x, y, w, h)
+            g.Move(pos[1], pos[2])
+        }
+    } finally {
+        Critical criticoAnterior
+    }
+}
+
+GuardarClaseConfig() {
+    global ArchivoConfig, ClaseMinutos, ClaseRelojMostrar, ClaseAvisoSonoro, FocoRadio, FocoOpacidad
+    for clave, valor in Map("Minutos", ClaseMinutos, "RelojMostrar", ClaseRelojMostrar,
+        "AvisoSonoro", ClaseAvisoSonoro, "RadioFoco", FocoRadio, "OpacidadFoco", FocoOpacidad)
+        IniWrite(valor, ArchivoConfig, "Clase", clave)
+}
+
+CerrarHerramientasClase() {
+    global RelojClaseGui, RelojClaseCuenta, RelojClaseEstado, ClaseEnMarcha, FocoClaseActivo
+    SetTimer(ActualizarClase, 0)
+    SetTimer(AvisarFinClase, 0)
+    SetTimer(ActualizarPantallasClase, 0)
+    LeerDuracionPanelClase()
+    try GuardarClaseConfig()
+    ClaseEnMarcha := false, FocoClaseActivo := false
+    DestruirFocoClase()
+    CerrarPanelClase()
+    g := RelojClaseGui
+    RelojClaseGui := 0, RelojClaseCuenta := 0, RelojClaseEstado := 0
+    if g is Gui
+        g.Destroy()
+}
+
 ConfigurarBandeja() {
     global MostrarMouse, MostrarHistorial
     A_TrayMenu.Delete()
+    A_TrayMenu.Add("Panel de clase...  (Ctrl+Alt+C)", AbrirPanelClase)
+    A_TrayMenu.Add("Iniciar / pausar temporizador  (Ctrl+Alt+P)", AlternarTemporizadorClase)
+    A_TrayMenu.Add("Foco del cursor  (Ctrl+Alt+E)", AlternarFocoClase)
+    A_TrayMenu.Add()
     A_TrayMenu.Add("Minimizar / expandir  (Ctrl+Alt+N)", (*) => AlternarMinimizado())
     A_TrayMenu.Add("Editar nota de clase...  (Ctrl+Alt+O)", (*) => EditarNotaDirecta())
     A_TrayMenu.Add("Mostrar / ocultar nota  (Ctrl+Alt+T)", (*) => AlternarNota())
@@ -1086,7 +1582,7 @@ ConfigurarBandeja() {
     A_TrayMenu.Add("Resplandor del mouse  (Ctrl+Alt+M)", (*) => AlternarResplandorMouse())
     A_TrayMenu.Add()
     A_TrayMenu.Add("Salir  (Ctrl+Alt+Q)", (*) => ExitApp())
-    A_IconTip := "Mostrador de teclas - historial visual y pulsacion animada"
+    A_IconTip := "Mostrador · teclado, notas y herramientas de clase"
 }
 
 
@@ -2090,6 +2586,9 @@ VentanaMostradorDisponible(hwnd := 0) {
 CerrarMostrador(*) {
     global CerrandoMostrador, HwndTeclado, overlay, ih, HistorialBitmap, Redimension
     CerrandoMostrador := true
+    OnMessage(0x0201, ArrastrarRelojClase, 0)
+    OnMessage(0x0232, GuardarPosicionRelojClase, 0)
+    CerrarHerramientasClase()
     OnMessage(0x0201, PresionarAnotacion, 0)
     OnMessage(0x0203, PresionarAnotacion, 0)
     OnMessage(0x0200, MoverAnotacion, 0)
@@ -2578,6 +3077,8 @@ ActualizarMenuSeleccion() {
 
 AbrirMenuAjustes(*) {
     menuAjustes := Menu()
+    menuAjustes.Add("Panel de clase...", AbrirPanelClase)
+    menuAjustes.Add()
     menuAjustes.Add("Mouse y aura...", (*) => AbrirAjustesMouse())
     menuAjustes.Add("Notas...", (*) => AbrirNotas())
     menuAjustes.Add("Selección de texto...", (*) => AbrirAjustesSeleccion())
@@ -2671,7 +3172,10 @@ CerrarAjustesSeleccion(*) {
 ; Anotaciones temporales. El lienzo deja pasar los clics; sólo el modo de dibujo
 ; muestra una superficie de captura independiente y una barra de herramientas.
 IniciarAnotaciones(*) {
-    global AnotModo, AnotCaptura, AnotBarra, AnotTextoGui
+    global AnotModo, AnotCaptura, AnotBarra, AnotTextoGui, AnotPausa, ClaseGui
+    ; Cerrar el panel libera espacio y evita que sus campos compartan atajos de dibujo.
+    if ClaseGui is Gui
+        CerrarPanelClase()
     if AnotTextoGui is Gui {
         AnotTextoGui.Show()
         return
@@ -2682,9 +3186,14 @@ IniciarAnotaciones(*) {
         if AnotModo
             return
         CrearLienzoAnotaciones()
-        AnotModo := true
+        AnotModo := true, AnotPausa := false
         MostrarCapturaAnotaciones()
-        CrearBarraAnotaciones()
+        if AnotBarra is Gui {
+            ActualizarPaletaAnotaciones()
+            AnotBarra.Show("NoActivate")
+        } else {
+            CrearBarraAnotaciones()
+        }
         A_TrayMenu.Check("Anotar pantalla  (Ctrl+Alt+A)")
     } catch as err {
         CerrarAnotaciones()
@@ -2704,6 +3213,7 @@ AlternarAnotaciones(*) {
 
 FinalizarAnotaciones(*) {
     global AnotModo, AnotActual, AnotCaptura, AnotBarra, AnotHwndCaptura, AnotTextoPendiente, AnotTextoEdicion, AnotDuracion
+    global AnotPausa
     criticoAnterior := A_IsCritical
     Critical "On"
     try {
@@ -2713,13 +3223,54 @@ FinalizarAnotaciones(*) {
         if IsObject(AnotTextoEdicion)
             AnotTextoEdicion.vence := AnotDuracion ? A_TickCount + AnotDuracion * 1000 : 0
         AnotTextoEdicion := 0
-        AnotModo := false, AnotActual := 0
+        AnotModo := false, AnotPausa := false, AnotActual := 0
         if AnotHwndCaptura && DllCall("GetCapture", "ptr") = AnotHwndCaptura
             DllCall("ReleaseCapture")
         if AnotCaptura is Gui
             AnotCaptura.Hide()
         if AnotBarra is Gui
             AnotBarra.Hide()
+        A_TrayMenu.Uncheck("Anotar pantalla  (Ctrl+Alt+A)")
+        SolicitarPintadoAnotaciones()
+    } finally {
+        Critical criticoAnterior
+    }
+}
+
+AlternarPausaAnotaciones(*) {
+    global AnotModo
+    if AnotModo
+        PausarAnotaciones()
+    else
+        IniciarAnotaciones()
+}
+
+PausarAnotaciones(*) {
+    global AnotModo, AnotPausa, AnotActual, AnotCaptura, AnotBarra, AnotHwndCaptura
+    global AnotTextoPendiente, AnotTextoEdicion, AnotDuracion, AnotTextoGui
+    if AnotTextoGui is Gui {
+        AnotTextoGui.Show()
+        return
+    }
+    criticoAnterior := A_IsCritical
+    Critical "On"
+    try {
+        if !AnotModo
+            return
+        SetTimer(AbrirTextoAnotacion, 0)
+        AnotTextoPendiente := false
+        CancelarTrazoAnotacion()
+        if IsObject(AnotTextoEdicion)
+            AnotTextoEdicion.vence := AnotDuracion ? A_TickCount + AnotDuracion * 1000 : 0
+        AnotTextoEdicion := 0
+        AnotModo := false, AnotPausa := true, AnotActual := 0
+        if AnotHwndCaptura && DllCall("GetCapture", "ptr") = AnotHwndCaptura
+            DllCall("ReleaseCapture")
+        if AnotCaptura is Gui
+            AnotCaptura.Hide()
+        ActualizarPaletaAnotaciones()
+        if AnotBarra is Gui
+            AnotBarra.Show("NoActivate")
         A_TrayMenu.Uncheck("Anotar pantalla  (Ctrl+Alt+A)")
         SolicitarPintadoAnotaciones()
     } finally {
@@ -2765,9 +3316,11 @@ MostrarCapturaAnotaciones() {
 CrearBarraAnotaciones() {
     global AnotBarra, AnotCaptura, AnotBotones, AnotColores, AnotArrastre, AnotEstado
     global AnotGrosorTexto, AnotDeshacerBoton, AnotRehacerBoton, AnotBorrarBoton, AnotGrosorEtiqueta
+    global AnotPausaBoton
     if AnotBarra is Gui
         AnotBarra.Destroy()
-    g := Gui("+AlwaysOnTop -Caption +ToolWindow -DPIScale +E0x08000000 +Owner" AnotCaptura.Hwnd, "Anotaciones · Herramientas")
+    ; Independiente de la captura: permanece disponible al usar el escritorio.
+    g := Gui("+AlwaysOnTop -Caption +ToolWindow -DPIScale +E0x08000000", "Anotaciones · Herramientas")
     AnotBarra := g
     g.BackColor := "0F0F0F"
     g.MarginX := 0, g.MarginY := 0
@@ -2801,6 +3354,7 @@ CrearBarraAnotaciones() {
     AnotRehacerBoton := BotonPaletaAnotacion(g, "↷  Rehacer", 136, 168, 112, 32, RehacerAnotacion)
     AnotBorrarBoton := BotonPaletaAnotacion(g, "Borrar todo", 256, 168, 132, 32, BorrarAnotaciones, "352126", "FF9AAA")
     BotonPaletaAnotacion(g, "Volver", 396, 168, 132, 32, FinalizarAnotaciones)
+    AnotPausaBoton := BotonPaletaAnotacion(g, "Usar escritorio", 16, 208, 512, 32, AlternarPausaAnotaciones, "203044", "A9CDFF")
     ActualizarPaletaAnotaciones()
     punto := Buffer(8, 0)
     DllCall("GetCursorPos", "ptr", punto)
@@ -2813,7 +3367,7 @@ CrearBarraAnotaciones() {
     } else {
         MonitorGetWorkArea(MonitorGetPrimary(), &izquierda, &arriba, &derecha)
     }
-    ancho := Round(544 * escala), alto := Round(214 * escala)
+    ancho := Round(544 * escala), alto := Round(254 * escala)
     RedondearNota(g, ancho, alto, Round(14 * escala))
     g.Show(Format("x{} y{} w{} h{} NoActivate", Max(izquierda, Round((izquierda + derecha - ancho) / 2)), arriba + Round(12 * escala), ancho, alto))
 }
@@ -2854,6 +3408,7 @@ CambiarGrosorAnotacion(delta, *) {
 
 ActualizarPaletaAnotaciones() {
     global AnotBotones, AnotColores, AnotHerramienta, AnotColor, AnotEstado, AnotDuracion, AnotGrosor
+    global AnotPausa, AnotPausaBoton
     global AnotGrosorTexto, AnotDeshacerBoton, AnotRehacerBoton, AnotBorrarBoton
     global AnotHistorial, AnotRehacer, AnotActual, AnotTrazos, AnotTextoTam, AnotGrosorEtiqueta, AnotArrastreTexto
     for clave, boton in AnotBotones {
@@ -2869,8 +3424,10 @@ ActualizarPaletaAnotaciones() {
         AnotGrosorEtiqueta.Text := AnotHerramienta = "texto" ? "Letra" : "Grosor"
     if IsObject(AnotEstado) {
         nombres := Map("trazo", "Trazo libre", "flecha", "Flecha", "ovalo", "Óvalo", "marco", "Marco", "linea", "Línea", "texto", "Texto · pulsa para escribir")
-        AnotEstado.Text := nombres[AnotHerramienta] " · " (AnotDuracion ? AnotDuracion " s" : "Borrado manual")
+        AnotEstado.Text := (AnotPausa ? "Escritorio libre · " : "") nombres[AnotHerramienta] " · " (AnotDuracion ? AnotDuracion " s" : "Borrado manual")
     }
+    if IsObject(AnotPausaBoton)
+        AnotPausaBoton.Text := AnotPausa ? "Dibujar" : "Usar escritorio"
     if IsObject(AnotDeshacerBoton)
         AnotDeshacerBoton.Enabled := AnotHistorial.Length > 0 || IsObject(AnotActual) || IsObject(AnotArrastreTexto)
     if IsObject(AnotRehacerBoton)
@@ -2950,11 +3507,11 @@ PuntoAnotacion() {
 
 PresionarAnotacion(wParam, lParam, msg, hwnd) {
     global AnotModo, AnotHwndCaptura, AnotActual, AnotHerramienta, AnotColor, AnotGrosor, AnotBarra, AnotArrastre
-    global AnotTextoPunto, AnotTextoPendiente
+    global AnotTextoPunto, AnotTextoPendiente, AnotPausa
     criticoAnterior := A_IsCritical
     Critical "On"
     try {
-        if AnotModo && (AnotBarra is Gui) && AnotArrastre.Has(hwnd) {
+        if (AnotModo || AnotPausa) && (AnotBarra is Gui) && AnotArrastre.Has(hwnd) {
             DllCall("ReleaseCapture")
             PostMessage(0x00A1, 2, 0, , AnotBarra)
             return 0
@@ -3061,6 +3618,7 @@ CursorAnotacion(wParam, lParam, msg, hwnd) {
 
 ExpirarAnotaciones() {
     global AnotTrazos, AnotActual, AnotModo, AnotHwndCaptura, AnotTextoGui, AnotTextoPendiente, AnotArrastreTexto
+    global AnotPausa
     criticoAnterior := A_IsCritical
     Critical "On"
     try {
@@ -3079,7 +3637,7 @@ ExpirarAnotaciones() {
             ActualizarPaletaAnotaciones()
             SolicitarPintadoAnotaciones()
         }
-        if !AnotModo && !AnotTrazos.Length && !IsObject(AnotActual) && !(AnotTextoGui is Gui) && !AnotTextoPendiente
+        if !AnotModo && !AnotPausa && !AnotTrazos.Length && !IsObject(AnotActual) && !(AnotTextoGui is Gui) && !AnotTextoPendiente
             CerrarAnotaciones()
     } finally {
         Critical criticoAnterior
@@ -3193,6 +3751,7 @@ CerrarAnotaciones(*) {
     global AnotActual, AnotTrazos, AnotPendiente, AnotPic, AnotBotones, AnotHistorial, AnotRehacer
     global AnotColores, AnotArrastre, AnotEstado, AnotGrosorTexto, AnotDeshacerBoton, AnotRehacerBoton, AnotBorrarBoton, AnotGrosorEtiqueta
     global AnotArrastreTexto, AnotTextoSeleccionado, AnotUltimoTexto
+    global AnotPausa, AnotPausaBoton
     criticoAnterior := A_IsCritical
     Critical "On"
     try {
@@ -3202,7 +3761,8 @@ CerrarAnotaciones(*) {
         AnotArrastreTexto := 0, AnotTextoSeleccionado := 0, AnotUltimoTexto := 0
         if AnotHwndCaptura && DllCall("GetCapture", "ptr") = AnotHwndCaptura
             DllCall("ReleaseCapture")
-        AnotModo := false, AnotHwndCaptura := 0, AnotActual := 0, AnotTrazos := [], AnotPendiente := false
+        AnotModo := false, AnotPausa := false, AnotPausaBoton := 0
+        AnotHwndCaptura := 0, AnotActual := 0, AnotTrazos := [], AnotPendiente := false
         for ventana in [AnotBarra, AnotCaptura, AnotLienzo]
             if ventana is Gui
                 ventana.Destroy()
@@ -3360,6 +3920,7 @@ CancelarTextoAnotacion(*) {
 
 CerrarTextoAnotacion(continuar := false) {
     global AnotTextoGui, AnotTextoCampos, AnotTextoPendiente, AnotModo, AnotCaptura, AnotBarra, CerrandoMostrador, AnotTextoEdicion, AnotDuracion
+    global AnotPausa
     criticoAnterior := A_IsCritical
     Critical "On"
     try {
@@ -3373,7 +3934,7 @@ CerrarTextoAnotacion(continuar := false) {
         if ventanaTexto is Gui
             ventanaTexto.Destroy()
         if continuar && !CerrandoMostrador && (AnotCaptura is Gui) && (AnotBarra is Gui) {
-            AnotModo := true
+            AnotModo := true, AnotPausa := false
             MostrarCapturaAnotaciones()
             ActualizarPaletaAnotaciones()
             AnotBarra.Show("NoActivate")
