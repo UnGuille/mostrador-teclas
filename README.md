@@ -30,7 +30,10 @@ El **autoocultado solo actúa cuando el mostrador está bloqueado** y esa opció
 
 ## Panel de clase
 
-Abre **⚙ → Panel de clase** o pulsa **Ctrl izquierdo + Alt izquierdo + C**.
+Pulsa el **icono de reloj ámbar**, junto a dibujo y ⚙ en la esquina superior
+derecha del teclado. Abre el panel de clase y sigue siendo accesible con la posición
+del teclado bloqueada. También puedes usar **⚙ → Panel de clase** o
+**Ctrl izquierdo + Alt izquierdo + C**.
 También está en la bandeja y en el menú del icono del teclado minimizado.
 Reúne los controles para preparar una actividad sin llenar la pantalla de botones:
 

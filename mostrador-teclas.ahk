@@ -89,7 +89,7 @@ global overlay := 0, txtCombo := 0, txtPrev := 0, U := 40, GuiW := 0, GuiH := 0
 global ih := 0, Recursos := [], Fuentes := Map()
 global Redimension := 0, HwndTeclado := 0, CerrandoMostrador := false
 global Minimizado := false, ControlMinimizar := 0, BotonMinimizar := 0
-global IconoMinX := 0, IconoMinY := 0, BotonAjustes := 0
+global IconoMinX := 0, IconoMinY := 0, BotonAjustes := 0, BotonClase := 0
 global ArchivoNota := A_ScriptDir "\overlay-nota.txt"
 global NotaTexto := LeerNota()
 global NotaMostrar := Integer(IniRead(ArchivoConfig, "Notas", "Mostrar", "0"))
@@ -412,7 +412,7 @@ Construir() {
             GuiH := Round(U * 0.8) + 2 * overlay.MarginY
             CrearNota()
             overlay.SetFont("s" Pt(U * 0.45) " c" Col.barra " bold", "Segoe UI")
-            txtCombo := overlay.AddText(Format("x{} y{} w{} h{} +0x200 +0x80", pad, overlay.MarginY, Round(14 * U) - 4 * TamBotonMinimizar() - Round(U * 0.4), Round(U * 0.8)))
+            txtCombo := overlay.AddText(Format("x{} y{} w{} h{} +0x200 +0x80", pad, overlay.MarginY, Round(14 * U) - AnchoControlesMostrador() - Max(2, Round(U * 0.1)), Round(U * 0.8)))
             txtPrev := 0
             WinSetTransparent(255, overlay)
             return
@@ -442,7 +442,7 @@ Construir() {
 
     ; El estado actual es grande; el historial usa mini teclas de otra paleta.
     overlay.SetFont("s" Pt(U * 0.45) " c" Col.barra " bold", "Segoe UI")
-    txtCombo := overlay.AddText(Format("x{} y{} w{} h{} +0x200 +0x80 +0x4000", pad, pad, HistorialW - 4 * TamBotonMinimizar() - Round(U * 0.4), barH), "")
+    txtCombo := overlay.AddText(Format("x{} y{} w{} h{} +0x200 +0x80 +0x4000", pad, pad, HistorialW - AnchoControlesMostrador() - Max(2, Round(U * 0.1)), barH), "")
     txtPrev := 0
     if MostrarHistorial
         HistorialPic := overlay.AddText(Format("x{} y{} w{} h{} +0xE", pad, historialY, HistorialW, HistorialH))
@@ -2278,8 +2278,13 @@ TamBotonMinimizar() {
     return Max(18, Round(U * 0.65))
 }
 
+AnchoControlesMostrador() {
+    global U
+    return 5 * TamBotonMinimizar() + 4 * Max(2, Round(U * 0.1))
+}
+
 CrearControlMinimizar() {
-    global ControlMinimizar, BotonMinimizar, BotonAjustes, BotonNotas, BotonAnotaciones
+    global ControlMinimizar, BotonMinimizar, BotonAjustes, BotonNotas, BotonAnotaciones, BotonClase
     ; Una ventana independiente permite pulsarlo incluso con el teclado bloqueado.
     ControlMinimizar := Gui("+AlwaysOnTop -Caption +ToolWindow -DPIScale +E0x08000000", "Minimizar mostrador")
     ControlMinimizar.MarginX := 0, ControlMinimizar.MarginY := 0
@@ -2295,6 +2300,9 @@ CrearControlMinimizar() {
     BotonAnotaciones := ControlMinimizar.AddText("x0 y0 w26 h26 Center +0x200 +0x100", Chr(0xE76D))
     BotonAnotaciones.SetFont("s" Pt(17) " c8AB4F8", "Segoe MDL2 Assets")
     BotonAnotaciones.OnEvent("Click", AlternarAnotaciones)
+    BotonClase := ControlMinimizar.AddText("x0 y0 w26 h26 Center +0x200 +0x100", Chr(0xE917))
+    BotonClase.SetFont("s" Pt(17) " cFFC857", "Segoe MDL2 Assets")
+    BotonClase.OnEvent("Click", AbrirPanelClase)
     ControlMinimizar.OnEvent("ContextMenu", AbrirMenuAjustes)
     ControlMinimizar.OnEvent("Close", (*) => AlternarMinimizado())
 }
@@ -2311,7 +2319,7 @@ ActualizarControlMinimizar() {
     PosicionarPanelNota()
     if !VentanaMostradorDisponible()
         return
-    global ControlMinimizar, BotonMinimizar, BotonAjustes, BotonNotas, BotonAnotaciones, Minimizado, Visible, overlay, U
+    global ControlMinimizar, BotonMinimizar, BotonAjustes, BotonNotas, BotonAnotaciones, BotonClase, Minimizado, Visible, overlay, U
     global IconoMinX, IconoMinY, MostrarTeclado, MostrarHistorial
     if !IsObject(ControlMinimizar)
         return
@@ -2331,7 +2339,7 @@ ActualizarControlMinimizar() {
         pad := Round(U * 0.3)
         margenY := MostrarTeclado ? pad : Round(pad * 0.6)
         separacion := Max(2, Round(U * 0.1))
-        ancho := 4 * tam + 3 * separacion
+        ancho := AnchoControlesMostrador()
         x := ox + ow - pad - ancho, y := oy + margenY
         BotonMinimizar.Text := "−"
         ControlMinimizar.Title := "Minimizar teclado (Ctrl+Alt+N)"
@@ -2344,8 +2352,9 @@ ActualizarControlMinimizar() {
         x := Max(NumGet(info, 20, "int"), Min(x, NumGet(info, 28, "int") - ancho))
         y := Max(NumGet(info, 24, "int"), Min(y, NumGet(info, 32, "int") - tam))
     }
-    IconoMinX := Minimizado ? x : x + 3 * (tam + separacion)
+    IconoMinX := Minimizado ? x : x + 4 * (tam + separacion)
     IconoMinY := y
+    BotonClase.Visible := !Minimizado
     BotonAnotaciones.Visible := !Minimizado
     BotonNotas.Visible := !Minimizado
     BotonAjustes.Visible := !Minimizado
@@ -2354,10 +2363,12 @@ ActualizarControlMinimizar() {
         BotonNotas.SetFont("s" Pt(tam * 0.65) " cFF6B7D", "Segoe UI Symbol")
         BotonAnotaciones.Move(tam + separacion, 0, tam, tam)
         BotonAnotaciones.SetFont("s" Pt(tam * 0.62) " c8AB4F8", "Segoe MDL2 Assets")
-        BotonAjustes.Move(2 * (tam + separacion), 0, tam, tam)
+        BotonClase.Move(2 * (tam + separacion), 0, tam, tam)
+        BotonClase.SetFont("s" Pt(tam * 0.62) " cFFC857", "Segoe MDL2 Assets")
+        BotonAjustes.Move(3 * (tam + separacion), 0, tam, tam)
         BotonAjustes.SetFont("s" Pt(tam * 0.65) " cF1F1F1", "Segoe UI Symbol")
     }
-    BotonMinimizar.Move(Minimizado ? 0 : 3 * (tam + separacion), 0, tam, tam)
+    BotonMinimizar.Move(Minimizado ? 0 : 4 * (tam + separacion), 0, tam, tam)
     BotonMinimizar.SetFont("s" Pt(tam * 0.65) " cF1F1F1", "Segoe UI Symbol")
     ControlMinimizar.Show(Format("x{} y{} w{} h{} NoActivate", x, y, ancho, tam))
     ControlMinimizar.Opt("+AlwaysOnTop")
