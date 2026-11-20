@@ -298,16 +298,27 @@ del teclado** en los ajustes de la nota y cambia **Fondo personalizado**.
 
 Pulsa el **botón azul de dibujo** junto a las notas, ⚙ y minimizar, o usa
 **Ctrl izquierdo + Alt izquierdo + A**. Se abre una paleta flotante oscura con
-herramientas, colores y acciones. Arrastra su cabecera para moverla.
+herramientas, colores y acciones en una **barra vertical compacta**, centrada en
+el lateral derecho de la pantalla donde estás trabajando la primera vez.
+
+Arrastra el agarre **···** de arriba o cualquier espacio vacío para moverla.
+Arrastra sus bordes o esquinas para cambiar su tamaño: los botones y las letras
+se adaptan al espacio. La posición y el tamaño se guardan en `[Anotaciones]`
+de `overlay-config.ini` (`BarraX`, `BarraY`, `BarraAncho`, `BarraAlto`).
+Al desconectar una pantalla, la posición guardada se ajusta a una disponible.
+
+Las seis herramientas conservan sus nombres para reconocerlas fácilmente.
+Debajo están los colores, el grosor o tamaño de letra, **↶ / ↷** para deshacer
+y rehacer, **Escritorio / Dibujar**, borrar, ajustes, ocultar y cerrar todo.
 
 - **Trazo, Flecha, Óvalo, Marco, Línea y Texto** para dibujar, subrayar o señalar un área.
 - **Colores rápidos** y botones **− / +** para cambiar el grosor desde la paleta.
 - **Deshacer y Rehacer**, también después de **Borrar todo**.
-- **Usar escritorio / Dibujar** para alternar entre manejar las ventanas y anotar.
+- **Escritorio / Dibujar** para alternar entre manejar las ventanas y anotar.
 - **Esc / X** para ocultar la paleta conservando las marcas; **Cerrar todo** para borrar la sesión y cerrar esa herramienta.
 - **⚙** para elegir cualquier color y modificar la herramienta inicial y la duración.
 
-El botón **Usar escritorio** pausa la captura del dibujo y deja la paleta
+El botón **Escritorio** pausa la captura del dibujo y deja la paleta
 visible: puedes cambiar de diapositiva, desplazarte o usar cualquier programa.
 Pulsa **Dibujar** para continuar desde la misma posición de la paleta. Las marcas
 permanecen hasta borrarlas por defecto; la pausa permite que los clics lleguen
@@ -341,7 +352,7 @@ las ventanas. La herramienta seleccionada se distingue con un acento rojo.
 | `Ctrl izquierdo + Alt izquierdo + X` | Borrar también fuera del modo dibujo |
 
 Los textos y dibujos permanecen **hasta que los borres o pulses Cerrar todo**
-por defecto. **Usar escritorio** pausa el dibujo con la paleta disponible;
+por defecto. **Escritorio** pausa el dibujo con la paleta disponible;
 **Dibujar** permite continuar. **Esc** y la **X** ocultan la paleta y conservan las
 anotaciones terminadas. Puedes volver a abrirla con el botón de dibujo o
 **Ctrl izquierdo + Alt izquierdo + A**.

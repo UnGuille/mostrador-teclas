@@ -140,6 +140,7 @@ global FocoOpacidad := LeerEnteroClase("OpacidadFoco", 55, 15, 80)
 global FocoVirtualX := 0, FocoVirtualY := 0, FocoVirtualW := 0, FocoVirtualH := 0
 global AnotInterfazHwnds := Map(), AnotInterfazRects := []
 global AnotAreaClave := "", AnotAreaPendiente := false
+global AnotBarraElementos := []
 global AnotPausa := false, AnotPausaBoton := 0
 global AnotModo := false, AnotLienzo := 0, AnotCaptura := 0, AnotBarra := 0, AnotPic := 0
 global AnotAjustes := 0, AnotCampos := 0, AnotHwndCaptura := 0, AnotBotones := Map()
@@ -165,6 +166,7 @@ global AnotDuracion := AnotBorradoManual ? 0 : Max(0, Min(60, Integer(IniRead(Ar
 
 try {
     OnExit(CerrarMostrador)
+    OnMessage(0x0232, GuardarGeometriaBarraAnotaciones)
     OnMessage(0x0047, ProgramarAreaCapturaAnotaciones)
     OnMessage(0x0006, ActivacionDialogosMostrador)
     OnMessage(0x0047, CambioCapasMostrador)
@@ -3509,6 +3511,7 @@ VentanaMostradorDisponible(hwnd := 0) {
 CerrarMostrador(*) {
     global CerrandoMostrador, HwndTeclado, overlay, ih, HistorialBitmap, Redimension
     CerrandoMostrador := true
+    OnMessage(0x0232, GuardarGeometriaBarraAnotaciones, 0)
     OnMessage(0x0047, ProgramarAreaCapturaAnotaciones, 0)
     LiberarAreaCapturaAnotaciones()
     OnMessage(0x0006, ActivacionDialogosMostrador, 0)
@@ -4663,64 +4666,112 @@ MostrarCapturaAnotaciones() {
 }
 
 CrearBarraAnotaciones() {
-    global AnotBarra, AnotCaptura, AnotBotones, AnotColores, AnotArrastre, AnotEstado
-    global AnotGrosorTexto, AnotDeshacerBoton, AnotRehacerBoton, AnotBorrarBoton, AnotGrosorEtiqueta
-    global AnotPausaBoton
+    global AnotBarra, AnotBotones, AnotColores, AnotArrastre, AnotEstado, AnotBarraElementos
+    global AnotGrosorTexto, AnotGrosorEtiqueta, AnotDeshacerBoton, AnotRehacerBoton, AnotBorrarBoton, AnotPausaBoton, ArchivoConfig
     if AnotBarra is Gui
         AnotBarra.Destroy()
-    ; Independiente de la captura: permanece disponible al usar el escritorio.
-    g := Gui("+AlwaysOnTop -Caption +ToolWindow -DPIScale +E0x08000000", "Anotaciones · Herramientas")
+    AnotBarraElementos := [], AnotBotones := Map(), AnotColores := Map(), AnotArrastre := Map(), AnotEstado := 0
+    g := Gui("+AlwaysOnTop -Caption +Resize -MinimizeBox -MaximizeBox +ToolWindow -DPIScale +E0x08000000", "Anotaciones")
     AnotBarra := g
     g.BackColor := "0F0F0F"
     g.MarginX := 0, g.MarginY := 0
-    escala := A_ScreenDPI / 96
-    AnotBotones := Map(), AnotColores := Map(), AnotArrastre := Map()
-    g.SetFont("s12 cF1F1F1 bold", "Segoe UI")
-    titulo := g.AddText(Format("x{} y{} w{} h{} +0x200 +0x100", Round(16 * escala), Round(10 * escala), Round(370 * escala), Round(26 * escala)), "Anotaciones")
-    AnotArrastre[titulo.Hwnd] := true
-    g.SetFont("s9 c999999 norm", "Segoe UI")
-    AnotEstado := g.AddText(Format("x{} y{} w{} h{} +0x200 +0x100", Round(16 * escala), Round(36 * escala), Round(370 * escala), Round(20 * escala)))
-    AnotArrastre[AnotEstado.Hwnd] := true
-    BotonPaletaAnotacion(g, Chr(0xE713), 454, 12, 30, 30, AbrirAjustesAnotaciones, "232323", "D6D6D6", "Segoe MDL2 Assets")
-    BotonPaletaAnotacion(g, Chr(0xE8BB), 498, 12, 30, 30, FinalizarAnotaciones, "232323", "D6D6D6", "Segoe MDL2 Assets")
-    herramientas := [["✎  Trazo", "trazo"], ["↗  Flecha", "flecha"], ["○  Óvalo", "ovalo"], ["▭  Marco", "marco"], ["╱  Línea", "linea"], ["Aa Texto", "texto"]]
-    for i, herramienta in herramientas
-        AnotBotones[herramienta[2]] := BotonPaletaAnotacion(g, herramienta[1], 16 + (i - 1) * 86, 66, 78, 40,
-            ElegirHerramientaAnotacion.Bind(herramienta[2]))
-    g.SetFont("s9 cAAAAAA", "Segoe UI")
-    g.AddText(Format("x{} y{} w{} h{} +0x200", Round(16 * escala), Round(122 * escala), Round(42 * escala), Round(26 * escala)), "Color")
+    agarre := ElementoBarraAnotacion(g, "···", 8, 4, 96, 24, 0, "0F0F0F", "909090", 20)
+    AnotArrastre[agarre.Hwnd] := true
+    for i, herramienta in [["Trazo", "trazo"], ["Flecha", "flecha"], ["Óvalo", "ovalo"], ["Marco", "marco"], ["Línea", "linea"], ["Texto", "texto"]]
+        AnotBotones[herramienta[2]] := ElementoBarraAnotacion(g, herramienta[1], 8, 34 + (i - 1) * 34, 96, 30, ElegirHerramientaAnotacion.Bind(herramienta[2]))
     for i, color in ["FF334D", "FFC857", "71DCA7", "8AB4F8", "C5A5F5", "F1F1F1"]
-        AnotColores[color] := BotonPaletaAnotacion(g, "", 64 + (i - 1) * 32, 122, 24, 26,
-            ElegirColorAnotacion.Bind(color), color, "181818")
-    g.SetFont("s9 cAAAAAA", "Segoe UI")
-    AnotGrosorEtiqueta := g.AddText(Format("x{} y{} w{} h{} +0x200", Round(286 * escala), Round(122 * escala), Round(52 * escala), Round(26 * escala)), "Grosor")
-    BotonPaletaAnotacion(g, "−", 344, 122, 28, 26, CambiarGrosorAnotacion.Bind(-1))
-    g.SetFont("s9 cF1F1F1", "Segoe UI")
-    AnotGrosorTexto := g.AddText(Format("x{} y{} w{} h{} Center +0x200", Round(376 * escala), Round(122 * escala), Round(48 * escala), Round(26 * escala)))
-    BotonPaletaAnotacion(g, "+", 428, 122, 28, 26, CambiarGrosorAnotacion.Bind(1))
-    g.AddText(Format("x{} y{} w{} h1 Background272727", Round(16 * escala), Round(155 * escala), Round(512 * escala)))
-    AnotDeshacerBoton := BotonPaletaAnotacion(g, "↶  Deshacer", 16, 168, 112, 32, DeshacerAnotacion)
-    AnotRehacerBoton := BotonPaletaAnotacion(g, "↷  Rehacer", 136, 168, 112, 32, RehacerAnotacion)
-    AnotBorrarBoton := BotonPaletaAnotacion(g, "Borrar todo", 256, 168, 132, 32, BorrarAnotaciones, "352126", "FF9AAA")
-    BotonPaletaAnotacion(g, "Cerrar todo", 396, 168, 132, 32, (*) => CerrarAnotaciones())
-    AnotPausaBoton := BotonPaletaAnotacion(g, "Usar escritorio", 16, 208, 512, 32, AlternarPausaAnotaciones, "203044", "A9CDFF")
-    ActualizarPaletaAnotaciones()
+        AnotColores[color] := ElementoBarraAnotacion(g, "", 12 + Mod(i - 1, 3) * 32, 246 + ((i - 1) // 3) * 30, 24, 24, ElegirColorAnotacion.Bind(color), color, "181818")
+    AnotGrosorEtiqueta := ElementoBarraAnotacion(g, "Grosor", 8, 312, 96, 18, 0, "0F0F0F", "909090", 11)
+    ElementoBarraAnotacion(g, "−", 8, 336, 28, 28, CambiarGrosorAnotacion.Bind(-1))
+    AnotGrosorTexto := ElementoBarraAnotacion(g, "", 38, 336, 36, 28, 0, "0F0F0F", "D6D6D6", 11)
+    ElementoBarraAnotacion(g, "+", 76, 336, 28, 28, CambiarGrosorAnotacion.Bind(1))
+    AnotDeshacerBoton := ElementoBarraAnotacion(g, "↶", 8, 376, 44, 30, DeshacerAnotacion, "232323", "D6D6D6", 20)
+    AnotRehacerBoton := ElementoBarraAnotacion(g, "↷", 60, 376, 44, 30, RehacerAnotacion, "232323", "D6D6D6", 20)
+    AnotPausaBoton := ElementoBarraAnotacion(g, "Escritorio", 8, 418, 96, 32, AlternarPausaAnotaciones, "203044", "A9CDFF")
+    AnotBorrarBoton := ElementoBarraAnotacion(g, "Borrar todo", 8, 462, 96, 30, BorrarAnotaciones, "352126", "FF9AAA")
+    ElementoBarraAnotacion(g, "Ajustes", 8, 502, 96, 28, AbrirAjustesAnotaciones)
+    ElementoBarraAnotacion(g, "Ocultar", 8, 538, 96, 26, FinalizarAnotaciones, "1D1D1D", "AAAAAA")
+    ElementoBarraAnotacion(g, "Cerrar todo", 8, 574, 96, 26, (*) => CerrarAnotaciones(), "352126", "FF9AAA")
     punto := Buffer(8, 0)
     DllCall("GetCursorPos", "ptr", punto)
     monitor := DllCall("MonitorFromPoint", "int64", NumGet(punto, 0, "int64"), "uint", 2, "ptr")
     info := Buffer(40, 0)
     NumPut("uint", 40, info)
     if DllCall("GetMonitorInfoW", "ptr", monitor, "ptr", info) {
-        izquierda := NumGet(info, 20, "int"), derecha := NumGet(info, 28, "int")
-        arriba := NumGet(info, 24, "int")
+        l := NumGet(info, 20, "int"), t := NumGet(info, 24, "int"), r := NumGet(info, 28, "int"), b := NumGet(info, 32, "int")
     } else {
-        MonitorGetWorkArea(MonitorGetPrimary(), &izquierda, &arriba, &derecha)
+        MonitorGetWorkArea(MonitorGetPrimary(), &l, &t, &r, &b)
     }
-    ancho := Round(544 * escala), alto := Round(254 * escala)
-    RedondearNota(g, ancho, alto, Round(14 * escala))
-    g.Show(Format("x{} y{} w{} h{} NoActivate", Max(izquierda, Round((izquierda + derecha - ancho) / 2)), arriba + Round(12 * escala), ancho, alto))
+    dpi := A_ScreenDPI / 96
+    ajuste := Min(dpi, (b - t - 32) / 608)
+    ancho := IniRead(ArchivoConfig, "Anotaciones", "BarraAncho", "")
+    alto := IniRead(ArchivoConfig, "Anotaciones", "BarraAlto", "")
+    w := IsNumber(ancho) ? Round(Max(84 * ajuste, Min(ancho * dpi, r - l - 24))) : Round(112 * ajuste)
+    h := IsNumber(alto) ? Round(Max(456 * ajuste, Min(alto * dpi, b - t - 24))) : Round(608 * ajuste)
+    x := IniRead(ArchivoConfig, "Anotaciones", "BarraX", "")
+    y := IniRead(ArchivoConfig, "Anotaciones", "BarraY", "")
+    pos := PosicionEnPantalla(IsInteger(x) ? Integer(x) : r - w - 16,
+        IsInteger(y) ? Integer(y) : t + ((b - t - h) // 2), w + 16, h + 16)
+    g.Opt("+MinSize" Round(84 * ajuste) "x" Round(456 * ajuste))
+    g.OnEvent("Size", AjustarBarraAnotaciones)
+    g.OnEvent("Close", FinalizarAnotaciones)
+    AplicarTemaAjustes(g)
+    g.Show(Format("x{} y{} w{} h{} NoActivate", pos[1], pos[2], w, h))
+    g.GetClientPos(, , &cw, &ch)
+    AjustarBarraAnotaciones(g, 0, cw, ch)
+    ActualizarPaletaAnotaciones()
     ActualizarAreaCapturaAnotaciones()
     ReordenarCapasMostrador()
+}
+
+ElementoBarraAnotacion(g, texto, x, y, w, h, accion := 0, fondo := "232323", tinta := "D6D6D6", px := 12) {
+    global AnotBarraElementos
+    g.SetFont("s" Pt(px) " c" tinta, "Segoe UI")
+    control := g.AddText(Format("x{} y{} w{} h{} Center +0x200 +0x100 Background{}", x, y, w, h, fondo), texto)
+    if IsObject(accion)
+        control.OnEvent("Click", accion)
+    AnotBarraElementos.Push({control: control, x: x, y: y, w: w, h: h, px: px})
+    return control
+}
+
+AjustarBarraAnotaciones(g, minmax, ancho, alto) {
+    global AnotBarra, AnotBarraElementos, CerrandoMostrador
+    if CerrandoMostrador || minmax = -1 || !(AnotBarra is Gui) || g.Hwnd != AnotBarra.Hwnd
+        return
+    anterior := A_IsCritical
+    Critical "On"
+    try {
+        sx := ancho / 112, sy := alto / 608
+        for d in AnotBarraElementos {
+            w := Max(1, Round(d.w * sx)), h := Max(1, Round(d.h * sy))
+            d.control.Move(Round(d.x * sx), Round(d.y * sy), w, h)
+            d.control.SetFont("s" Pt(d.px * Min(sx, sy)))
+            RedondearNota(d.control, w, h, Max(4, Round(10 * Min(sx, sy))))
+        }
+        if AnotModoActivoBarra()
+            ActualizarAreaCapturaAnotaciones()
+    } finally {
+        Critical anterior
+    }
+}
+
+AnotModoActivoBarra() {
+    global AnotModo
+    return AnotModo
+}
+
+GuardarGeometriaBarraAnotaciones(wParam, lParam, msg, hwnd) {
+    global AnotBarra, ArchivoConfig, CerrandoMostrador
+    if CerrandoMostrador || !(AnotBarra is Gui) || hwnd != AnotBarra.Hwnd
+        return
+    AnotBarra.GetPos(&x, &y, &totalW, &totalH)
+    pos := PosicionEnPantalla(x, y, totalW, totalH)
+    x := pos[1], y := pos[2]
+    AnotBarra.Move(x, y)
+    AnotBarra.GetClientPos(, , &w, &h)
+    dpi := A_ScreenDPI / 96
+    for clave, valor in Map("BarraX", x, "BarraY", y, "BarraAncho", Round(w / dpi, 2), "BarraAlto", Round(h / dpi, 2))
+        IniWrite(valor, ArchivoConfig, "Anotaciones", clave)
 }
 
 BotonPaletaAnotacion(g, texto, x, y, w, h, accion, fondo := "232323", tinta := "D6D6D6", fuente := "Segoe UI") {
@@ -4778,7 +4829,7 @@ ActualizarPaletaAnotaciones() {
         AnotEstado.Text := (AnotPausa ? "Escritorio libre · " : "") nombres[AnotHerramienta] " · " (AnotDuracion ? AnotDuracion " s" : "Borrado manual")
     }
     if IsObject(AnotPausaBoton)
-        AnotPausaBoton.Text := AnotPausa ? "Dibujar" : "Usar escritorio"
+        AnotPausaBoton.Text := AnotPausa ? "Dibujar" : "Escritorio"
     if IsObject(AnotDeshacerBoton)
         AnotDeshacerBoton.Enabled := AnotHistorial.Length > 0 || IsObject(AnotActual) || IsObject(AnotArrastreTexto)
     if IsObject(AnotRehacerBoton)
@@ -5112,7 +5163,7 @@ CerrarAnotaciones(*) {
     global AnotActual, AnotTrazos, AnotPendiente, AnotPic, AnotBotones, AnotHistorial, AnotRehacer
     global AnotColores, AnotArrastre, AnotEstado, AnotGrosorTexto, AnotDeshacerBoton, AnotRehacerBoton, AnotBorrarBoton, AnotGrosorEtiqueta
     global AnotArrastreTexto, AnotTextoSeleccionado, AnotUltimoTexto
-    global AnotPausa, AnotPausaBoton
+    global AnotPausa, AnotPausaBoton, AnotBarraElementos
     criticoAnterior := A_IsCritical
     Critical "On"
     try {
@@ -5123,6 +5174,7 @@ CerrarAnotaciones(*) {
         AnotArrastreTexto := 0, AnotTextoSeleccionado := 0, AnotUltimoTexto := 0
         if AnotHwndCaptura && DllCall("GetCapture", "ptr") = AnotHwndCaptura
             DllCall("ReleaseCapture")
+        AnotBarraElementos := []
         AnotModo := false, AnotPausa := false, AnotPausaBoton := 0
         AnotHwndCaptura := 0, AnotActual := 0, AnotTrazos := [], AnotPendiente := false
         for ventana in [AnotBarra, AnotCaptura, AnotLienzo]
