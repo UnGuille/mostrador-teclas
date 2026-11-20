@@ -35,19 +35,29 @@ derecha del teclado. Abre el panel de clase y sigue siendo accesible con la posi
 del teclado bloqueada. También puedes usar **⚙ → Panel de clase** o
 **Ctrl izquierdo + Alt izquierdo + C**.
 También está en la bandeja y en el menú del icono del teclado minimizado.
+El panel tiene tres pestañas: **Tiempo**, **Foco** y **Ayudas**. Usa superficies
+redondeadas, botones amplios y una esfera con aro de progreso alrededor de la cuenta.
+Arrastra su cabecera para colocarlo. El tamaño se adapta al área disponible de la pantalla.
+El icono de reloj se dibuja con círculo y manecillas, sin fuentes de iconos especiales.
+
 Reúne los controles para preparar una actividad sin llenar la pantalla de botones:
 
 - **Temporizador:** elige 1, 3, 5 o 10 minutos, escribe una duración entre 1 y 180,
   añade un minuto, pausa, continúa o reinicia. **Ctrl + Alt + P** inicia o pausa
   sin abrir el panel. Cambiar un tiempo rápido prepara una nueva cuenta sin iniciarla.
+  El tiempo elegido se destaca; usa **− / +** o escribe los minutos. **Enter**
+  inicia o pausa cuando tienes abierta la pestaña Tiempo.
 - **Reloj flotante:** sigue visible al cerrar el panel o minimizar el teclado.
-  Arrástralo a cualquier pantalla y haz clic derecho para abrir los controles.
+  Muestra la cuenta en una esfera con aro de progreso. Arrastra la esfera a
+  cualquier pantalla; usa **Pausar / Seguir** sin abrir el panel y **Abrir**
+  o clic derecho para acceder a todos los controles.
   En los últimos diez segundos usa ámbar; al terminar, rojo y «Fin».
   Puedes ocultarlo o habilitar un aviso sonoro, desactivado por defecto.
   Reiniciar detiene la cuenta y retira el reloj hasta que vuelvas a iniciarla.
 - **Foco del cursor:** oscurece el escritorio y deja un círculo claro alrededor
   del puntero para centrar la atención. Ajusta el radio (80–420 píxeles) y la
-  intensidad (15–80 %) desde el panel. **Ctrl + Alt + E** lo enciende o apaga.
+  intensidad (15–80 %) desde su pestaña, con botones **− / +**.
+  **Ctrl + Alt + E** lo enciende o apaga.
   Deja pasar los clics y funciona también con el teclado minimizado.
 - **Accesos rápidos:** minimizar o expandir el teclado, activar o apagar el aura,
   dibujar y editar las notas. El aura y el foco se controlan por separado.
@@ -62,6 +72,15 @@ ayudas: compartir sólo una ventana puede dejar fuera el teclado, las notas, el 
 y los dibujos flotantes. El resultado depende del programa de videollamada y del
 modo de captura. En una proyección con escritorio extendido, coloca las ayudas
 en la pantalla del proyector; el foco y el lienzo abarcan las pantallas conectadas.
+
+El engrane abre una paleta oscura de tarjetas con accesos claros al panel de
+clase, mouse y aura, notas, selección y anotaciones. Se coloca junto al cursor y se
+ajusta a la pantalla disponible. Elige una tarjeta, pulsa **Esc** o haz clic fuera
+para cerrarla. Al abrirla durante el dibujo, se libera la captura del escritorio.
+
+Los botones de los ajustes de mouse, notas, selección y anotaciones comparten
+superficies redondeadas, estados al pasar el cursor y un indicador de foco
+para usarlos con el teclado. Sus acciones y campos de configuración se conservan.
 
 ## Personalizar el mouse y el aura
 
