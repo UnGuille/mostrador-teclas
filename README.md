@@ -315,6 +315,17 @@ a las aplicaciones. También puedes arrastrar la cabecera mientras está pausado
 **Esc** y la **X** ocultan la paleta sin borrar las anotaciones. Los atajos de
 herramientas quedan libres al usar el escritorio.
 
+La paleta y las ventanas del mostrador quedan libres del lienzo de dibujo.
+Al pasar el cursor por ellas recuperas el puntero normal: puedes pulsar botones,
+arrastrar la paleta desde su cabecera y mover el teclado cuando esté desbloqueado.
+También puedes minimizarlo o expandirlo desde su icono **sin salir de anotaciones**.
+Las zonas libres se actualizan al mover, mostrar, ocultar o redimensionar las ventanas.
+
+Si entras en una de esas zonas mientras dibujas o arrastras una anotación de texto,
+el gesto termina en su último punto válido y se conserva para deshacer. No pulsa
+botones por sí solo: suelta el mouse y haz un nuevo clic para usar el control.
+Al regresar al lienzo vuelve el cursor de la herramienta y puedes seguir dibujando.
+
 Mientras el modo está activo, arrastra con el botón izquierdo para dibujar sobre
 la pantalla. Las marcas permanecen en su posición aunque cambie el contenido de
 las ventanas. La herramienta seleccionada se distingue con un acento rojo.

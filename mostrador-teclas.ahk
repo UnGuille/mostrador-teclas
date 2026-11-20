@@ -138,6 +138,8 @@ global FocoClaseActivo := false, FocoClaseGui := 0, FocoX := "", FocoY := ""
 global FocoRadio := LeerEnteroClase("RadioFoco", 180, 80, 420)
 global FocoOpacidad := LeerEnteroClase("OpacidadFoco", 55, 15, 80)
 global FocoVirtualX := 0, FocoVirtualY := 0, FocoVirtualW := 0, FocoVirtualH := 0
+global AnotInterfazHwnds := Map(), AnotInterfazRects := []
+global AnotAreaClave := "", AnotAreaPendiente := false
 global AnotPausa := false, AnotPausaBoton := 0
 global AnotModo := false, AnotLienzo := 0, AnotCaptura := 0, AnotBarra := 0, AnotPic := 0
 global AnotAjustes := 0, AnotCampos := 0, AnotHwndCaptura := 0, AnotBotones := Map()
@@ -163,6 +165,7 @@ global AnotDuracion := AnotBorradoManual ? 0 : Max(0, Min(60, Integer(IniRead(Ar
 
 try {
     OnExit(CerrarMostrador)
+    OnMessage(0x0047, ProgramarAreaCapturaAnotaciones)
     OnMessage(0x0006, ActivacionDialogosMostrador)
     OnMessage(0x0047, CambioCapasMostrador)
     OnMessage(0x0200, HoverBotonModerno)
@@ -3506,6 +3509,8 @@ VentanaMostradorDisponible(hwnd := 0) {
 CerrarMostrador(*) {
     global CerrandoMostrador, HwndTeclado, overlay, ih, HistorialBitmap, Redimension
     CerrandoMostrador := true
+    OnMessage(0x0047, ProgramarAreaCapturaAnotaciones, 0)
+    LiberarAreaCapturaAnotaciones()
     OnMessage(0x0006, ActivacionDialogosMostrador, 0)
     OnMessage(0x0047, CambioCapasMostrador, 0)
     SetTimer(ReordenarCapasMostrador, 0)
@@ -4030,8 +4035,9 @@ CapasMostrador() {
     global FocoClaseGui, overlay, PanelNota, RelojClaseGui, HaloMouse, ControlMinimizar
     global AnotLienzo, AnotCaptura, AnotBarra
     ; Del fondo hacia delante. Los diálogos se ordenan al terminar.
-    return [FocoClaseGui, overlay, PanelNota, RelojClaseGui, HaloMouse,
-        ControlMinimizar, AnotLienzo, AnotCaptura, AnotBarra]
+    ; La entrada y la tinta quedan por debajo de los controles interactivos.
+    return [FocoClaseGui, AnotLienzo, AnotCaptura, overlay, PanelNota, RelojClaseGui,
+        HaloMouse, ControlMinimizar, AnotBarra]
 }
 
 RecordarFrenteMostrador(hwnd) {
@@ -4392,6 +4398,8 @@ IniciarAnotaciones(*) {
         } else {
             CrearBarraAnotaciones()
         }
+        ActualizarAreaCapturaAnotaciones()
+        ReordenarCapasMostrador()
         A_TrayMenu.Check("Anotar pantalla  (Ctrl+Alt+A)")
     } catch as err {
         CerrarAnotaciones()
@@ -4421,6 +4429,7 @@ FinalizarAnotaciones(*) {
         if IsObject(AnotTextoEdicion)
             AnotTextoEdicion.vence := AnotDuracion ? A_TickCount + AnotDuracion * 1000 : 0
         AnotTextoEdicion := 0
+        LiberarAreaCapturaAnotaciones()
         AnotModo := false, AnotPausa := false, AnotActual := 0
         if AnotHwndCaptura && DllCall("GetCapture", "ptr") = AnotHwndCaptura
             DllCall("ReleaseCapture")
@@ -4461,6 +4470,7 @@ PausarAnotaciones(*) {
         if IsObject(AnotTextoEdicion)
             AnotTextoEdicion.vence := AnotDuracion ? A_TickCount + AnotDuracion * 1000 : 0
         AnotTextoEdicion := 0
+        LiberarAreaCapturaAnotaciones()
         AnotModo := false, AnotPausa := true, AnotActual := 0
         if AnotHwndCaptura && DllCall("GetCapture", "ptr") = AnotHwndCaptura
             DllCall("ReleaseCapture")
@@ -4506,9 +4516,150 @@ CrearLienzoAnotaciones() {
     SetTimer(ExpirarAnotaciones, 200)
 }
 
+; La captura de dibujo deja libres las ventanas interactivas del mostrador.
+VentanasInterfazAnotacion() {
+    global AnotBarra, overlay, ControlMinimizar, PanelNota, RelojClaseGui
+    ventanas := [AnotBarra, overlay, ControlMinimizar, PanelNota, RelojClaseGui]
+    for g in VentanasDialogoMostrador()
+        ventanas.Push(g)
+    return ventanas
+}
+
+ProgramarAreaCapturaAnotaciones(wParam, lParam, msg, hwnd) {
+    global AnotModo, AnotHwndCaptura, AnotInterfazHwnds, AnotAreaPendiente, CerrandoMostrador
+    if CerrandoMostrador || !AnotModo || !AnotHwndCaptura || hwnd = AnotHwndCaptura
+        return
+    protegido := AnotInterfazHwnds.Has(hwnd)
+    if !protegido {
+        for g in VentanasInterfazAnotacion() {
+            if HwndGuiMostrador(g) = hwnd {
+                protegido := true
+                break
+            }
+        }
+    }
+    if protegido {
+        AnotAreaPendiente := true
+        SetTimer(ActualizarAreaCapturaAnotaciones, -1)
+    }
+}
+
+ActualizarAreaCapturaAnotaciones() {
+    global AnotModo, AnotCaptura, AnotHwndCaptura, AnotX, AnotY, AnotW, AnotH
+    global AnotInterfazHwnds, AnotInterfazRects, AnotAreaClave, AnotAreaPendiente, CerrandoMostrador
+    criticoAnterior := A_IsCritical
+    Critical "On"
+    try {
+        SetTimer(ActualizarAreaCapturaAnotaciones, 0)
+        AnotAreaPendiente := false
+        if CerrandoMostrador || !AnotModo || !(AnotCaptura is Gui) || !AnotHwndCaptura
+            return false
+        if HwndGuiMostrador(AnotCaptura) != AnotHwndCaptura || AnotW < 1 || AnotH < 1
+            return false
+        ventanas := Map(), rectangulos := [], clave := AnotX "," AnotY "," AnotW "," AnotH
+        for g in VentanasInterfazAnotacion() {
+            hwnd := HwndGuiMostrador(g, true)
+            if !hwnd || ventanas.Has(hwnd)
+                continue
+            rect := Buffer(16, 0)
+            if !DllCall("GetWindowRect", "ptr", hwnd, "ptr", rect)
+                continue
+            l := Max(AnotX, NumGet(rect, 0, "int")), t := Max(AnotY, NumGet(rect, 4, "int"))
+            r := Min(AnotX + AnotW, NumGet(rect, 8, "int")), b := Min(AnotY + AnotH, NumGet(rect, 12, "int"))
+            if r <= l || b <= t
+                continue
+            ventanas[hwnd] := true
+            rectangulos.Push([l, t, r, b])
+            clave .= "|" hwnd ":" l "," t "," r "," b
+        }
+        ; También recordar HWND anteriores permite reaccionar a Hide/Destroy.
+        AnotInterfazHwnds := ventanas, AnotInterfazRects := rectangulos
+        if clave = AnotAreaClave
+            return true
+        region := DllCall("CreateRectRgn", "int", 0, "int", 0, "int", AnotW, "int", AnotH, "ptr")
+        if !region
+            return false
+        try {
+            for rect in rectangulos {
+                hueco := DllCall("CreateRectRgn", "int", rect[1] - AnotX, "int", rect[2] - AnotY,
+                    "int", rect[3] - AnotX, "int", rect[4] - AnotY, "ptr")
+                if !hueco
+                    return false
+                try resultado := DllCall("CombineRgn", "ptr", region, "ptr", region, "ptr", hueco, "int", 4)
+                finally DllCall("DeleteObject", "ptr", hueco)
+                if !resultado
+                    return false
+            }
+            if !DllCall("SetWindowRgn", "ptr", AnotHwndCaptura, "ptr", region, "int", true)
+                return false
+            ; Después del éxito, Windows conserva y libera la región asignada.
+            region := 0, AnotAreaClave := clave
+            return true
+        } finally {
+            if region
+                DllCall("DeleteObject", "ptr", region)
+        }
+    } finally {
+        Critical criticoAnterior
+    }
+}
+
+PunteroEnInterfazAnotacion() {
+    global AnotInterfazRects, AnotAreaPendiente
+    if AnotAreaPendiente
+        ActualizarAreaCapturaAnotaciones()
+    punto := Buffer(8, 0)
+    if !DllCall("GetCursorPos", "ptr", punto)
+        return false
+    x := NumGet(punto, 0, "int"), y := NumGet(punto, 4, "int")
+    for rect in AnotInterfazRects
+        if x >= rect[1] && x < rect[3] && y >= rect[2] && y < rect[4]
+            return true
+    return false
+}
+
+LiberarAreaCapturaAnotaciones() {
+    global AnotInterfazHwnds, AnotInterfazRects, AnotAreaClave, AnotAreaPendiente
+    SetTimer(ActualizarAreaCapturaAnotaciones, 0)
+    AnotInterfazHwnds := Map(), AnotInterfazRects := [], AnotAreaClave := "", AnotAreaPendiente := false
+}
+
+ConfirmarAnotacionSinMover(cruzandoInterfaz := false) {
+    global AnotActual, AnotArrastreTexto, AnotTrazos, AnotDuracion, AnotHwndCaptura, AnotUltimoTexto
+    criticoAnterior := A_IsCritical
+    Critical "On"
+    try {
+        if IsObject(AnotArrastreTexto) {
+            TerminarMovimientoTextoAnotacion(false)
+            if cruzandoInterfaz
+                AnotUltimoTexto := 0
+            return true
+        }
+        if !IsObject(AnotActual)
+            return false
+        antes := AnotTrazos.Clone()
+        AnotActual.vence := AnotDuracion ? A_TickCount + AnotDuracion * 1000 : 0
+        AnotTrazos.Push(AnotActual)
+        AnotActual := 0
+        RegistrarCambioAnotacion(antes)
+        if AnotHwndCaptura && DllCall("GetCapture", "ptr") = AnotHwndCaptura
+            DllCall("ReleaseCapture")
+        SolicitarPintadoAnotaciones()
+        return true
+    } finally {
+        Critical criticoAnterior
+    }
+}
+
+FlechaInterfazAnotacion() {
+    DllCall("SetCursor", "ptr", DllCall("LoadCursorW", "ptr", 0, "ptr", 32512, "ptr"))
+}
+
 MostrarCapturaAnotaciones() {
     global AnotCaptura, AnotX, AnotY, AnotW, AnotH
+    ActualizarAreaCapturaAnotaciones()
     AnotCaptura.Show(Format("x{} y{} w{} h{} NoActivate", AnotX, AnotY, AnotW, AnotH))
+    ReordenarCapasMostrador()
 }
 
 CrearBarraAnotaciones() {
@@ -4568,6 +4719,8 @@ CrearBarraAnotaciones() {
     ancho := Round(544 * escala), alto := Round(254 * escala)
     RedondearNota(g, ancho, alto, Round(14 * escala))
     g.Show(Format("x{} y{} w{} h{} NoActivate", Max(izquierda, Round((izquierda + derecha - ancho) / 2)), arriba + Round(12 * escala), ancho, alto))
+    ActualizarAreaCapturaAnotaciones()
+    ReordenarCapasMostrador()
 }
 
 BotonPaletaAnotacion(g, texto, x, y, w, h, accion, fondo := "232323", tinta := "D6D6D6", fuente := "Segoe UI") {
@@ -4709,13 +4862,17 @@ PresionarAnotacion(wParam, lParam, msg, hwnd) {
     criticoAnterior := A_IsCritical
     Critical "On"
     try {
-        if (AnotModo || AnotPausa) && (AnotBarra is Gui) && AnotArrastre.Has(hwnd) {
+        if (AnotModo || AnotPausa) && (AnotBarra is Gui) && (hwnd = AnotBarra.Hwnd || AnotArrastre.Has(hwnd)) {
             DllCall("ReleaseCapture")
             PostMessage(0x00A1, 2, 0, , AnotBarra)
             return 0
         }
         if !AnotModo || hwnd != AnotHwndCaptura
             return
+        if PunteroEnInterfazAnotacion() {
+            FlechaInterfazAnotacion()
+            return 0
+        }
         if IniciarInteraccionTextoAnotacion(msg)
             return 0
         if AnotHerramienta = "texto" {
@@ -4742,6 +4899,11 @@ MoverAnotacion(wParam, lParam, msg, hwnd) {
     try {
         if !AnotModo || hwnd != AnotHwndCaptura
             return
+        if PunteroEnInterfazAnotacion() {
+            ConfirmarAnotacionSinMover(true)
+            FlechaInterfazAnotacion()
+            return 0
+        }
         if IsObject(AnotArrastreTexto) {
             MoverTextoAnotacion()
             return 0
@@ -4773,21 +4935,12 @@ SoltarAnotacion(wParam, lParam, msg, hwnd) {
     try {
         if hwnd != AnotHwndCaptura
             return
-        if IsObject(AnotArrastreTexto) {
-            TerminarMovimientoTextoAnotacion()
-            return 0
-        }
-        if !IsObject(AnotActual)
+        if !IsObject(AnotActual) && !IsObject(AnotArrastreTexto)
             return
-        MoverAnotacion(wParam, lParam, msg, hwnd)
-        AnotActual.vence := AnotDuracion ? A_TickCount + AnotDuracion * 1000 : 0
-        antes := AnotTrazos.Clone()
-        AnotTrazos.Push(AnotActual)
-        AnotActual := 0
-        RegistrarCambioAnotacion(antes)
-        if DllCall("GetCapture", "ptr") = AnotHwndCaptura
-            DllCall("ReleaseCapture")
-        SolicitarPintadoAnotaciones()
+        sobreInterfaz := PunteroEnInterfazAnotacion()
+        if !sobreInterfaz
+            MoverAnotacion(wParam, lParam, msg, hwnd)
+        ConfirmarAnotacionSinMover(sobreInterfaz)
         return 0
     } finally {
         Critical criticoAnterior
@@ -4796,7 +4949,7 @@ SoltarAnotacion(wParam, lParam, msg, hwnd) {
 
 DerechoAnotacion(wParam, lParam, msg, hwnd) {
     global AnotModo, AnotHwndCaptura
-    if AnotModo && hwnd = AnotHwndCaptura {
+    if AnotModo && hwnd = AnotHwndCaptura && !PunteroEnInterfazAnotacion() {
         DeshacerAnotacion()
         return 0
     }
@@ -4805,6 +4958,10 @@ DerechoAnotacion(wParam, lParam, msg, hwnd) {
 CursorAnotacion(wParam, lParam, msg, hwnd) {
     global AnotModo, AnotHwndCaptura, AnotHerramienta, AnotArrastreTexto, AnotActual
     if AnotModo && hwnd = AnotHwndCaptura {
+        if PunteroEnInterfazAnotacion() {
+            FlechaInterfazAnotacion()
+            return 1
+        }
         sobreTexto := IsObject(AnotArrastreTexto) || (!IsObject(AnotActual) && TextoAnotacionEnPunto(PuntoAnotacion()))
         tipoCursor := sobreTexto ? 32646 : AnotHerramienta = "texto" ? 32513 : 32515
         cursor := DllCall("LoadCursorW", "ptr", 0, "ptr", tipoCursor, "ptr")
@@ -4820,9 +4977,15 @@ ExpirarAnotaciones() {
     criticoAnterior := A_IsCritical
     Critical "On"
     try {
-        ; También termina el trazo si el botón se soltó sobre la barra de herramientas.
-        if (IsObject(AnotActual) || IsObject(AnotArrastreTexto)) && !GetKeyState("LButton", "P")
-            SoltarAnotacion(0, 0, 0, AnotHwndCaptura)
+        ; Un trazo se detiene antes de entrar en la interfaz, sin reproducir clics.
+        if IsObject(AnotActual) || IsObject(AnotArrastreTexto) {
+            if PunteroEnInterfazAnotacion() {
+                ConfirmarAnotacionSinMover(true)
+                FlechaInterfazAnotacion()
+            } else if !GetKeyState("LButton", "P") {
+                SoltarAnotacion(0, 0, 0, AnotHwndCaptura)
+            }
+        }
         nuevas := [], cambio := false
         for trazo in AnotTrazos {
             if trazo.vence && A_TickCount >= trazo.vence && !TextoAnotacionOcupado(trazo)
@@ -4953,6 +5116,7 @@ CerrarAnotaciones(*) {
     criticoAnterior := A_IsCritical
     Critical "On"
     try {
+        LiberarAreaCapturaAnotaciones()
         SetTimer(PintarAnotaciones, 0)
         SetTimer(ExpirarAnotaciones, 0)
         CerrarTextoAnotacion()
@@ -5139,6 +5303,8 @@ CerrarTextoAnotacion(continuar := false) {
             MostrarCapturaAnotaciones()
             ActualizarPaletaAnotaciones()
             AnotBarra.Show("NoActivate")
+            ActualizarAreaCapturaAnotaciones()
+            ReordenarCapasMostrador()
             A_TrayMenu.Check("Anotar pantalla  (Ctrl+Alt+A)")
         }
     } finally {
@@ -5334,12 +5500,13 @@ MoverTextoAnotacion() {
     SolicitarPintadoAnotaciones()
 }
 
-TerminarMovimientoTextoAnotacion() {
+TerminarMovimientoTextoAnotacion(actualizarPunto := true) {
     global AnotArrastreTexto, AnotTextoSeleccionado, AnotHwndCaptura, AnotDuracion
     global AnotUltimoTexto, AnotUltimoClick, AnotUltimoPunto
     if !IsObject(AnotArrastreTexto)
         return
-    MoverTextoAnotacion()
+    if actualizarPunto
+        MoverTextoAnotacion()
     movimiento := AnotArrastreTexto
     AnotArrastreTexto := 0
     if DllCall("GetCapture", "ptr") = AnotHwndCaptura
