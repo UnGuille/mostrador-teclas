@@ -90,6 +90,7 @@ global ih := 0, Recursos := [], Fuentes := Map()
 global Redimension := 0, HwndTeclado := 0, CerrandoMostrador := false
 global Minimizado := false, ControlMinimizar := 0, BotonMinimizar := 0
 global IconoMinX := 0, IconoMinY := 0, BotonAjustes := 0, BotonClase := 0
+global FrenteOrdenMostrador := [], FrenteReordenandoMostrador := false
 global MenuMostradorGui := 0, MenuMostradorControles := []
 global ArchivoNota := A_ScriptDir "\overlay-nota.txt"
 global NotaTexto := LeerNota()
@@ -120,6 +121,10 @@ global UIImagenesModernas := Map(), UIBotonesModernos := Map(), UIEscalasModerna
 global UIHoverModerno := 0, BotonClaseTam := 0
 global ClaseGrupos := [[], [], []], ClaseVista := 1, ClaseArrastre := Map(), ClaseEsferaClave := ""
 global RelojClaseClave := "", RelojClaseAccion := 0
+global ClaseTiemposGui := 0, ClaseCamposTiempos := []
+global ClaseTiemposRapidos := LeerTiemposRapidosClase()
+global ClaseUsoTiempos := LeerUsoTiemposClase(), ClaseUsoVersion := 0
+global ClaseUsoSecuencia := SecuenciaUsoTiemposClase()
 global ClaseGui := 0, ClaseControles := 0
 global ClaseMinutos := LeerEnteroClase("Minutos", 5, 1, 180)
 global ClaseRelojMostrar := LeerEnteroClase("RelojMostrar", 1, 0, 1)
@@ -152,10 +157,14 @@ if !RegExMatch(AnotHerramienta, "^(trazo|flecha|ovalo|marco|linea|texto)$")
     AnotHerramienta := "trazo"
 global AnotColor := ColorMouseValido(IniRead(ArchivoConfig, "Anotaciones", "Color", "FF334D"), "FF334D")
 global AnotGrosor := Max(2, Min(16, Integer(IniRead(ArchivoConfig, "Anotaciones", "Grosor", "4"))))
-global AnotDuracion := Max(0, Min(60, Integer(IniRead(ArchivoConfig, "Anotaciones", "DuracionSeg", "8"))))
+; Una preferencia nueva activa el borrado manual también con configuraciones antiguas.
+global AnotBorradoManual := Integer(IniRead(ArchivoConfig, "Anotaciones", "BorradoManual", "1")) != 0
+global AnotDuracion := AnotBorradoManual ? 0 : Max(0, Min(60, Integer(IniRead(ArchivoConfig, "Anotaciones", "DuracionSeg", "8"))))
 
 try {
     OnExit(CerrarMostrador)
+    OnMessage(0x0006, ActivacionDialogosMostrador)
+    OnMessage(0x0047, CambioCapasMostrador)
     OnMessage(0x0200, HoverBotonModerno)
     OnMessage(0x0020, CursorBotonModerno)
     OnMessage(0x0201, ArrastrarPanelClase)
@@ -842,8 +851,7 @@ Mostrar() {
     if (Visible && MostrarTeclado)
         return
     pos := CalcularPosicion(GuiW, GuiH)
-    overlay.Show(Format("x{} y{} w{} h{} NoActivate", pos[1], pos[2], GuiW, GuiH))
-    overlay.Opt("+AlwaysOnTop")
+    MostrarCapaMostrador(overlay, pos[1], pos[2], GuiW, GuiH)
     Visible := true
     ActualizarControlMinimizar()
 }
@@ -1583,6 +1591,225 @@ AjustarFocoClase(tipo, delta, *) {
     ActualizarClase()
 }
 
+; Cuatro accesos editables y tres duraciones frecuentes. Preferencias locales.
+LeerTiemposRapidosClase() {
+    global ArchivoConfig
+    valores := StrSplit(IniRead(ArchivoConfig, "Clase", "TiemposRapidos", "1,3,5,10"), ",")
+    vistos := Map(), salida := []
+    if valores.Length != 4
+        return [1, 3, 5, 10]
+    for texto in valores {
+        texto := Trim(texto)
+        if !IsInteger(texto)
+            return [1, 3, 5, 10]
+        minutos := Integer(texto)
+        if minutos < 1 || minutos > 180 || vistos.Has(minutos)
+            return [1, 3, 5, 10]
+        vistos[minutos] := true
+        salida.Push(minutos)
+    }
+    return salida
+}
+
+LeerUsoTiemposClase() {
+    global ArchivoConfig
+    salida := Map()
+    seccion := IniRead(ArchivoConfig, "ClaseUso", , "")
+    for linea in StrSplit(seccion, "`n") {
+        if !RegExMatch(Trim(linea, " `t`r"), "^(\d{1,3})=(\d{1,7}),(\d{1,13})$", &dato)
+            continue
+        minutos := Integer(dato[1]), veces := Integer(dato[2]), ultimo := Integer(dato[3])
+        if minutos < 1 || minutos > 180 || veces < 1 || ultimo < 1
+            continue
+        salida[minutos] := {veces: Min(1000000, veces), ultimo: Min(1000000000000, ultimo)}
+    }
+    return salida
+}
+
+SecuenciaUsoTiemposClase() {
+    global ClaseUsoTiempos
+    secuencia := 0
+    for minutos, uso in ClaseUsoTiempos
+        secuencia := Max(secuencia, uso.ultimo)
+    return secuencia
+}
+
+RegistrarUsoTiempoClase(milisegundos) {
+    global ClaseUsoTiempos, ClaseUsoSecuencia, ClaseUsoVersion, ArchivoConfig
+    minutos := Max(1, Min(180, Round(milisegundos / 60000)))
+    anterior := ClaseUsoTiempos.Get(minutos, {veces: 0, ultimo: 0})
+    ClaseUsoSecuencia += 1
+    nuevo := {veces: Min(1000000, anterior.veces + 1), ultimo: ClaseUsoSecuencia}
+    ClaseUsoTiempos[minutos] := nuevo
+    ClaseUsoVersion += 1
+    IniWrite(nuevo.veces "," nuevo.ultimo, ArchivoConfig, "ClaseUso", minutos)
+}
+
+TiemposMasUsadosClase(limite := 3) {
+    global ClaseUsoTiempos
+    salida := []
+    for minutos, uso in ClaseUsoTiempos {
+        registro := {minutos: minutos, veces: uso.veces, ultimo: uso.ultimo}
+        posicion := 1
+        for previo in salida {
+            if registro.veces > previo.veces || (registro.veces = previo.veces && registro.ultimo > previo.ultimo)
+                break
+            posicion += 1
+        }
+        if posicion <= limite {
+            salida.InsertAt(posicion, registro)
+            if salida.Length > limite
+                salida.Pop()
+        }
+    }
+    return salida
+}
+
+ElegirTiempoRapidoClase(indice, *) {
+    global ClaseTiemposRapidos
+    if indice >= 1 && indice <= ClaseTiemposRapidos.Length
+        ElegirMinutosClase(ClaseTiemposRapidos[indice])
+}
+
+ElegirTiempoFrecuenteClase(indice, *) {
+    lista := TiemposMasUsadosClase()
+    if indice >= 1 && indice <= lista.Length
+        ElegirMinutosClase(lista[indice].minutos)
+}
+
+ActualizarTiemposPanelClase() {
+    global ClaseControles, ClaseTiemposRapidos, ClaseUsoVersion, ClaseVista
+    global ClaseMinutos, ClaseRestanteMs, ClaseRelojSolicitado
+    if !IsObject(ClaseControles)
+        return
+    c := ClaseControles
+    for indice, boton in c.presets {
+        minutos := ClaseTiemposRapidos[indice]
+        elegido := !ClaseRelojSolicitado && minutos = ClaseMinutos && ClaseRestanteMs = ClaseMinutos * 60000
+        ActualizarBotonModerno(boton, minutos " min", elegido ? "203044" : "232323", elegido ? "B6D7FF" : "D6D6D6")
+    }
+    if c.usoVersion != ClaseUsoVersion {
+        c.topFrecuentes := TiemposMasUsadosClase()
+        c.usoVersion := ClaseUsoVersion
+        for indice, boton in c.frecuentes {
+            if indice <= c.topFrecuentes.Length
+                ActualizarBotonModerno(boton, c.topFrecuentes[indice].minutos " min")
+        }
+    }
+    for indice, boton in c.frecuentes
+        boton.Visible := ClaseVista = 1 && indice <= c.topFrecuentes.Length
+    c.sinFrecuentes.Visible := ClaseVista = 1 && !c.topFrecuentes.Length
+}
+
+GuardarTiemposRapidosClase() {
+    global ArchivoConfig, ClaseTiemposRapidos
+    valores := ""
+    for indice, minutos in ClaseTiemposRapidos
+        valores .= (indice = 1 ? "" : ",") minutos
+    IniWrite(valores, ArchivoConfig, "Clase", "TiemposRapidos")
+}
+
+AbrirTiemposRapidosClase(*) {
+    global ClaseTiemposGui, ClaseCamposTiempos, ClaseTiemposRapidos, ClaseGui, CerrandoMostrador
+    global UIEscalasModernas
+    if CerrandoMostrador
+        return
+    if ClaseTiemposGui is Gui {
+        MostrarDialogoMostrador(ClaseTiemposGui)
+        return
+    }
+    criticoAnterior := A_IsCritical
+    Critical "On"
+    try {
+        g := Gui("+AlwaysOnTop -Caption +ToolWindow -DPIScale", "Tiempos rápidos")
+        ClaseTiemposGui := g, ClaseCamposTiempos := []
+        s := ClaseGui is Gui ? EscalaGuiModerna(ClaseGui) : A_ScreenDPI / 96
+        UIEscalasModernas[g.Hwnd] := s
+        g.BackColor := "0F0F0F"
+        g.MarginX := 0, g.MarginY := 0
+        FuentePanelClase(g, 17, "F1F1F1", true)
+        g.AddText(RectModerno(g, 20, 18, 320, 32), "Tus tiempos rápidos")
+        FuentePanelClase(g, 10, "AAAAAA")
+        g.AddText(RectModerno(g, 20, 60, 320, 46), "Elige cuatro duraciones diferentes.`nEntre 1 y 180 minutos.")
+        for indice, minutos in ClaseTiemposRapidos {
+            y := 124 + (indice - 1) * 54
+            FuentePanelClase(g, 11, "D6D6D6")
+            g.AddText(RectModerno(g, 24, y, 128, 36) " +0x200", "Acceso " indice)
+            FuentePanelClase(g, 14, "F1F1F1", true)
+            campo := g.AddEdit(RectModerno(g, 160, y, 100, 36)
+                " Number Center -E0x200 -Border Background181818 cF1F1F1", minutos)
+            ClaseCamposTiempos.Push(campo)
+            FuentePanelClase(g, 10, "909090")
+            g.AddText(RectModerno(g, 274, y, 64, 36) " +0x200", "min")
+        }
+        BotonClaseModerno(g, "Cancelar", 20, 354, 144, 44, CerrarTiemposRapidosClase)
+        BotonClaseModerno(g, "Guardar", 176, 354, 164, 44, AplicarTiemposRapidosClase, "A8C7FA", "10233D", 22)
+        g.OnEvent("Close", CerrarTiemposRapidosClase)
+        g.OnEvent("Escape", CerrarTiemposRapidosClase)
+        w := Round(360 * s), h := Round(420 * s)
+        if ClaseGui is Gui {
+            ClaseGui.GetPos(&px, &py, &pw, &ph)
+            pos := PosicionEnPantalla(px + ((pw - w) // 2), py + ((ph - h) // 2), w, h)
+        } else {
+            MonitorGetWorkArea(MonitorGetPrimary(), &l, &t, &r, &b)
+            pos := PosicionEnPantalla(l + ((r - l - w) // 2), t + ((b - t - h) // 2), w, h)
+        }
+        g.Show(Format("Hide x{} y{} w{} h{}", pos[1], pos[2], w, h))
+        RedondearNota(g, w, h, Round(24 * s))
+        MostrarDialogoMostrador(g)
+    } catch as err {
+        CerrarTiemposRapidosClase()
+        MsgBox("No se pudo abrir el editor: " err.Message, "Tiempos rápidos")
+    } finally {
+        Critical criticoAnterior
+    }
+}
+
+AplicarTiemposRapidosClase(*) {
+    global ClaseCamposTiempos, ClaseTiemposRapidos, ClaseTiemposGui
+    if ClaseCamposTiempos.Length != 4
+        return
+    valores := [], vistos := Map()
+    for campo in ClaseCamposTiempos {
+        valor := campo.Value
+        if !IsInteger(valor) || valor < 1 || valor > 180 {
+            MsgBox("Cada duración debe estar entre 1 y 180 minutos.", "Tiempos rápidos")
+            if (ClaseTiemposGui is Gui) && DllCall("IsWindow", "ptr", campo.Hwnd)
+                try campo.Focus()
+            return
+        }
+        minutos := Integer(valor)
+        if vistos.Has(minutos) {
+            MsgBox("Elige cuatro duraciones diferentes para aprovechar los accesos.", "Tiempos rápidos")
+            if (ClaseTiemposGui is Gui) && DllCall("IsWindow", "ptr", campo.Hwnd)
+                try campo.Focus()
+            return
+        }
+        vistos[minutos] := true
+        valores.Push(minutos)
+    }
+    ClaseTiemposRapidos := valores
+    GuardarTiemposRapidosClase()
+    CerrarTiemposRapidosClase()
+    ActualizarClase()
+}
+
+CerrarTiemposRapidosClase(*) {
+    global ClaseTiemposGui, ClaseCamposTiempos
+    criticoAnterior := A_IsCritical
+    Critical "On"
+    try {
+        g := ClaseTiemposGui
+        ClaseTiemposGui := 0, ClaseCamposTiempos := []
+        if g is Gui {
+            LiberarImagenesModernas(g)
+            g.Destroy()
+        }
+    } finally {
+        Critical criticoAnterior
+    }
+}
+
 LeerEnteroClase(clave, defecto, minimo, maximo) {
     global ArchivoConfig
     valor := IniRead(ArchivoConfig, "Clase", clave, defecto)
@@ -1595,7 +1822,7 @@ RectClase(x, y, w, h) {
 }
 
 AbrirPanelClase(*) {
-    global ClaseGui, ClaseControles, ClaseMinutos, ClaseRelojMostrar, ClaseAvisoSonoro
+    global ClaseGui, ClaseControles, ClaseMinutos, ClaseRelojMostrar, ClaseAvisoSonoro, ClaseTiemposRapidos
     global ClaseGrupos, ClaseVista, ClaseArrastre, ClaseEsferaClave, UIEscalasModernas
     global FocoRadio, FocoOpacidad, CerrandoMostrador, AnotModo
     if CerrandoMostrador
@@ -1603,7 +1830,7 @@ AbrirPanelClase(*) {
     if AnotModo
         PausarAnotaciones()
     if ClaseGui is Gui {
-        ClaseGui.Show()
+        MostrarDialogoMostrador(ClaseGui)
         return
     }
     anteriorCritico := A_IsCritical
@@ -1623,13 +1850,13 @@ AbrirPanelClase(*) {
             MonitorGetWorkArea(MonitorGetPrimary(), &l, &t, &r, &b)
         }
         ; Ajustar el panel también a proyectores con menos altura disponible.
-        s := Min(A_ScreenDPI / 96, (b - t - 32) / 616, (r - l - 24) / 408)
+        s := Min(A_ScreenDPI / 96, (b - t - 32) / 650, (r - l - 24) / 408)
         UIEscalasModernas[g.Hwnd] := s
-        w := Round(408 * s), h := Round(616 * s)
+        w := Round(408 * s), h := Round(650 * s)
         g.BackColor := "0F0F0F"
         g.MarginX := 0, g.MarginY := 0
-        g.AddText(RectModerno(g, 0, 0, 408, 616) " Background303030")
-        g.AddText(RectModerno(g, 1, 1, 406, 614) " Background0F0F0F")
+        g.AddText(RectModerno(g, 0, 0, 408, 650) " Background303030")
+        g.AddText(RectModerno(g, 1, 1, 406, 648) " Background0F0F0F")
         FuentePanelClase(g, 18, "F1F1F1", true)
         titulo := g.AddText(RectModerno(g, 22, 16, 290, 32) " +0x100", "Clase")
         FuentePanelClase(g, 9, "909090")
@@ -1640,29 +1867,45 @@ AbrirPanelClase(*) {
         for i, nombre in ["Tiempo", "Foco", "Ayudas"]
             tabs.Push(BotonClaseModerno(g, nombre, 20 + (i - 1) * 124, 86, 120, 38, MostrarVistaClase.Bind(i)))
 
-        cara := ControlVistaClase(1, g.AddText(RectModerno(g, 84, 136, 240, 240) " +0xE"))
-        presets := Map()
-        for i, minutos in [1, 3, 5, 10] {
-            boton := BotonClaseModerno(g, minutos " min", 20 + (i - 1) * 94, 390, 86, 42,
-                ElegirMinutosClase.Bind(minutos), "232323", "D6D6D6", 21)
+        cara := ControlVistaClase(1, g.AddText(RectModerno(g, 102, 134, 204, 204) " +0xE"))
+        FuentePanelClase(g, 9, "909090")
+        ControlVistaClase(1, g.AddText(RectModerno(g, 24, 340, 264, 22), "TIEMPOS RÁPIDOS"))
+        ControlVistaClase(1, BotonClaseModerno(g, "Editar", 312, 336, 76, 28, AbrirTiemposRapidosClase,
+            "1D1D1D", "B6D7FF", 14))
+        presets := []
+        for i, minutos in ClaseTiemposRapidos {
+            boton := BotonClaseModerno(g, minutos " min", 20 + (i - 1) * 94, 370, 86, 38,
+                ElegirTiempoRapidoClase.Bind(i), "232323", "D6D6D6", 19)
             ControlVistaClase(1, boton)
-            presets[minutos] := boton
+            presets.Push(boton)
         }
-        menos := ControlVistaClase(1, BotonClaseModerno(g, "−", 82, 448, 44, 40, AjustarMinutosClase.Bind(-1), "232323"))
+        FuentePanelClase(g, 9, "909090")
+        ControlVistaClase(1, g.AddText(RectModerno(g, 24, 418, 360, 20), "MÁS USADOS"))
+        frecuentes := []
+        Loop 3 {
+            boton := BotonClaseModerno(g, "—", 20 + (A_Index - 1) * 126, 442, 116, 36,
+                ElegirTiempoFrecuenteClase.Bind(A_Index), "1D1D1D", "AAAAAA", 18)
+            ControlVistaClase(1, boton)
+            frecuentes.Push(boton)
+        }
+        FuentePanelClase(g, 9, "707070")
+        sinFrecuentes := ControlVistaClase(1, g.AddText(RectModerno(g, 24, 446, 360, 26)
+            " Center +0x200", "Aparecerán al iniciar tus temporizadores."))
+        menos := ControlVistaClase(1, BotonClaseModerno(g, "−", 82, 496, 44, 38, AjustarMinutosClase.Bind(-1), "232323"))
         FuentePanelClase(g, 17, "F1F1F1", true)
-        minutosEdit := ControlVistaClase(1, g.AddEdit(RectModerno(g, 138, 448, 76, 40)
+        minutosEdit := ControlVistaClase(1, g.AddEdit(RectModerno(g, 138, 496, 76, 38)
             " Number Center -E0x200 -Border Background181818 cF1F1F1", ClaseMinutos))
         minutosEdit.OnEvent("Change", ProgramarMinutosClase)
         FuentePanelClase(g, 10, "909090")
-        ControlVistaClase(1, g.AddText(RectModerno(g, 222, 448, 40, 40) " +0x200", "min"))
-        mas := ControlVistaClase(1, BotonClaseModerno(g, "+", 280, 448, 44, 40, AjustarMinutosClase.Bind(1), "232323"))
-        ControlVistaClase(1, BotonClaseModerno(g, "Reiniciar", 20, 504, 104, 46, ReiniciarTemporizadorClase))
-        iniciar := ControlVistaClase(1, BotonClaseModerno(g, "Iniciar", 134, 504, 140, 46,
+        ControlVistaClase(1, g.AddText(RectModerno(g, 222, 496, 40, 38) " +0x200", "min"))
+        mas := ControlVistaClase(1, BotonClaseModerno(g, "+", 280, 496, 44, 38, AjustarMinutosClase.Bind(1), "232323"))
+        ControlVistaClase(1, BotonClaseModerno(g, "Reiniciar", 20, 548, 104, 44, ReiniciarTemporizadorClase))
+        iniciar := ControlVistaClase(1, BotonClaseModerno(g, "Iniciar", 134, 548, 140, 44,
             AlternarTemporizadorClase, "A8C7FA", "10233D", 23))
-        ControlVistaClase(1, BotonClaseModerno(g, "+1 min", 284, 504, 104, 46, SumarMinutoClase))
-        reloj := ControlVistaClase(1, BotonClaseModerno(g, "Reloj: sí", 20, 564, 176, 34,
+        ControlVistaClase(1, BotonClaseModerno(g, "+1 min", 284, 548, 104, 44, SumarMinutoClase))
+        reloj := ControlVistaClase(1, BotonClaseModerno(g, "Reloj: sí", 20, 606, 176, 30,
             AlternarPreferenciaClase.Bind("reloj"), "1D1D1D", "AAAAAA", 17))
-        sonido := ControlVistaClase(1, BotonClaseModerno(g, "Sonido: no", 208, 564, 180, 34,
+        sonido := ControlVistaClase(1, BotonClaseModerno(g, "Sonido: no", 208, 606, 180, 30,
             AlternarPreferenciaClase.Bind("sonido"), "1D1D1D", "AAAAAA", 17))
 
         FuentePanelClase(g, 19, "F1F1F1", true)
@@ -1703,14 +1946,15 @@ AbrirPanelClase(*) {
 
         ClaseControles := {cuenta: cara, minutos: minutosEdit, iniciar: iniciar, menos: menos, mas: mas,
             reloj: reloj, sonido: sonido, foco: foco, radioTexto: radioTexto, opacidadTexto: opacidadTexto,
-            teclado: teclado, aura: aura, presets: presets, tabs: tabs}
+            teclado: teclado, aura: aura, presets: presets, tabs: tabs, frecuentes: frecuentes,
+            sinFrecuentes: sinFrecuentes, topFrecuentes: [], usoVersion: -1}
         g.OnEvent("Close", CerrarPanelClase)
         g.OnEvent("Escape", CerrarPanelClase)
         ClaseEsferaClave := ""
         MostrarVistaClase(ClaseVista)
         g.Show(Format("Hide x{} y{} w{} h{}", l + ((r - l - w) // 2), t + ((b - t - h) // 2), w, h))
         RedondearNota(g, w, h, Round(26 * s))
-        g.Show()
+        MostrarDialogoMostrador(g)
         SetTimer(ActualizarClase, 250)
     } catch as err {
         CerrarPanelClase()
@@ -1725,6 +1969,7 @@ CerrarPanelClase(*) {
     criticoAnterior := A_IsCritical
     Critical "On"
     try {
+        CerrarTiemposRapidosClase()
         SetTimer(AplicarMinutosClase, 0)
         if !CerrandoMostrador && (ClaseGui is Gui) {
             LeerDuracionPanelClase()
@@ -1747,14 +1992,14 @@ CerrarPanelClase(*) {
 
 LeerDuracionPanelClase() {
     global ClaseTotalMs
-    global ClaseControles, ClaseMinutos, ClaseEnMarcha, ClaseRestanteMs, ClaseTerminado
+    global ClaseControles, ClaseMinutos, ClaseEnMarcha, ClaseRestanteMs, ClaseTerminado, ClaseRelojSolicitado
     if !IsObject(ClaseControles) || ClaseEnMarcha
         return
     valor := ClaseControles.minutos.Value
     minutos := IsInteger(valor) ? Max(1, Min(180, Integer(valor))) : ClaseMinutos
     ClaseControles.minutos.Value := minutos
     if minutos != ClaseMinutos {
-        ClaseMinutos := minutos, ClaseRestanteMs := minutos * 60000, ClaseTotalMs := ClaseRestanteMs, ClaseTerminado := false
+        ClaseMinutos := minutos, ClaseRestanteMs := minutos * 60000, ClaseTotalMs := ClaseRestanteMs, ClaseTerminado := false, ClaseRelojSolicitado := false
     }
 }
 
@@ -1786,9 +2031,12 @@ AlternarTemporizadorClase(*) {
         } else {
             LeerDuracionPanelClase()
             SetTimer(AplicarMinutosClase, 0)
+            nuevaCuenta := !ClaseRelojSolicitado || ClaseTerminado || ClaseRestanteMs <= 0
             if ClaseRestanteMs <= 0 {
                 ClaseRestanteMs := ClaseMinutos * 60000, ClaseTotalMs := ClaseRestanteMs
             }
+            if nuevaCuenta
+                RegistrarUsoTiempoClase(ClaseRestanteMs)
             ClaseTerminado := false, ClaseEnMarcha := true, ClaseRelojSolicitado := true
             ClaseFinTick := AhoraClase() + ClaseRestanteMs
             SetTimer(ActualizarClase, 250)
@@ -1873,7 +2121,7 @@ ActualizarClase() {
             c := ClaseControles
             if ClaseVista = 1 && ClaseEsferaClave != clave {
                 ClaseEsferaClave := clave
-                tam := Round(240 * EscalaGuiModerna(ClaseGui))
+                tam := Round(204 * EscalaGuiModerna(ClaseGui))
                 PonerImagenModerna(c.cuenta, DibujarEsferaClase(tam, progreso, cuenta, estado, color))
             }
             ActualizarBotonModerno(c.iniciar, ClaseEnMarcha ? "Pausar" : ClaseRelojSolicitado && !ClaseTerminado ? "Continuar" : "Iniciar")
@@ -1885,10 +2133,7 @@ ActualizarClase() {
             TextoControlClase(c.opacidadTexto, FocoOpacidad " %")
             ActualizarBotonModerno(c.teclado, "Teclado`n" (Minimizado ? "Expandir" : "Minimizar"))
             ActualizarBotonModerno(c.aura, "Aura`n" (ResplandorMouse ? "Apagar" : "Activar"))
-            for minutos, boton in c.presets {
-                elegido := !ClaseRelojSolicitado && minutos = ClaseMinutos && ClaseRestanteMs = ClaseMinutos * 60000
-                ActualizarBotonModerno(boton, , elegido ? "203044" : "232323", elegido ? "B6D7FF" : "D6D6D6")
-            }
+            ActualizarTiemposPanelClase()
             if c.minutos.Enabled = ClaseEnMarcha
                 c.minutos.Enabled := !ClaseEnMarcha
             c.menos.Enabled := !ClaseEnMarcha
@@ -2047,13 +2292,7 @@ ActualizarFocoClase() {
 }
 
 ElevarAyudasClase() {
-    global overlay, ControlMinimizar, HaloMouse, PanelNota, RelojClaseGui, ClaseGui
-    global AnotLienzo, AnotCaptura, AnotBarra, AnotTextoGui, AnotAjustes, AjustesMouseGui, NotasGui, AjustesSeleccionGui
-    for g in [overlay, ControlMinimizar, HaloMouse, PanelNota, RelojClaseGui,
-        AnotLienzo, AnotCaptura, AnotBarra, AnotTextoGui, AnotAjustes, AjustesMouseGui, NotasGui, AjustesSeleccionGui, ClaseGui] {
-        if (g is Gui) && DllCall("IsWindowVisible", "ptr", g.Hwnd)
-            DllCall("SetWindowPos", "ptr", g.Hwnd, "ptr", -1, "int", 0, "int", 0, "int", 0, "int", 0, "uint", 0x0013)
-    }
+    ReordenarCapasMostrador()
 }
 
 DestruirFocoClase() {
@@ -2094,6 +2333,7 @@ ActualizarPantallasClase() {
 }
 
 GuardarClaseConfig() {
+    GuardarTiemposRapidosClase()
     global ArchivoConfig, ClaseMinutos, ClaseRelojMostrar, ClaseAvisoSonoro, FocoRadio, FocoOpacidad
     for clave, valor in Map("Minutos", ClaseMinutos, "RelojMostrar", ClaseRelojMostrar,
         "AvisoSonoro", ClaseAvisoSonoro, "RadioFoco", FocoRadio, "OpacidadFoco", FocoOpacidad)
@@ -2102,6 +2342,7 @@ GuardarClaseConfig() {
 
 CerrarHerramientasClase() {
     global RelojClaseGui, RelojClaseCuenta, RelojClaseEstado, ClaseEnMarcha, FocoClaseActivo, RelojClaseAccion
+    CerrarTiemposRapidosClase()
     SetTimer(ActualizarClase, 0)
     SetTimer(AplicarMinutosClase, 0)
     SetTimer(AvisarFinClase, 0)
@@ -2943,8 +3184,7 @@ ActualizarControlMinimizar() {
     }
     BotonMinimizar.Move(Minimizado ? 0 : 4 * (tam + separacion), 0, tam, tam)
     BotonMinimizar.SetFont("s" Pt(tam * 0.65) " cF1F1F1", "Segoe UI Symbol")
-    ControlMinimizar.Show(Format("x{} y{} w{} h{} NoActivate", x, y, ancho, tam))
-    ControlMinimizar.Opt("+AlwaysOnTop")
+    MostrarCapaMostrador(ControlMinimizar, x, y, ancho, tam)
 }
 
 AlternarMinimizado() {
@@ -3109,7 +3349,7 @@ AbrirAjustesMouse() {
     if IsObject(Redimension)
         return
     if IsObject(AjustesMouseGui) {
-        AjustesMouseGui.Show()
+        MostrarDialogoMostrador(AjustesMouseGui)
         return
     }
     g := Gui("+AlwaysOnTop +ToolWindow", "Ajustes del mouse y aura")
@@ -3145,7 +3385,7 @@ AbrirAjustesMouse() {
     g.OnEvent("Close", CerrarAjustesMouse)
     g.OnEvent("Escape", CerrarAjustesMouse)
     AplicarTemaAjustes(g)
-    g.Show("w515 h524")
+    MostrarDialogoMostrador(g, "w515 h524")
 }
 
 CampoColorMouse(g, y, etiqueta, valor) {
@@ -3246,8 +3486,7 @@ AplicarAjustesMouse() {
         Reconstruir("Colores del mouse guardados")
     else
         AgregarAlHistorial("Ajustes del aura guardados")
-    AjustesMouseGui.Opt("+AlwaysOnTop")
-    AjustesMouseGui.Show()
+    MostrarDialogoMostrador(AjustesMouseGui)
 }
 
 
@@ -3267,6 +3506,9 @@ VentanaMostradorDisponible(hwnd := 0) {
 CerrarMostrador(*) {
     global CerrandoMostrador, HwndTeclado, overlay, ih, HistorialBitmap, Redimension
     CerrandoMostrador := true
+    OnMessage(0x0006, ActivacionDialogosMostrador, 0)
+    OnMessage(0x0047, CambioCapasMostrador, 0)
+    SetTimer(ReordenarCapasMostrador, 0)
     OnMessage(0x0200, HoverBotonModerno, 0)
     OnMessage(0x0020, CursorBotonModerno, 0)
     OnMessage(0x0201, ArrastrarPanelClase, 0)
@@ -3511,7 +3753,7 @@ PosicionarPanelNota() {
             return
         overlay.GetPos(&x, &y)
         ; La pestaña se centra y la tarjeta abierta conserva el ancho del mostrador.
-        ventanaNota.Show(Format("x{} y{} w{} h{} NoActivate", x + NotaOffsetX, y - NotaAlto, NotaAncho, NotaAlto))
+        MostrarCapaMostrador(ventanaNota, x + NotaOffsetX, y - NotaAlto, NotaAncho, NotaAlto)
     } finally {
         Critical criticoAnterior
     }
@@ -3530,7 +3772,7 @@ FocoNota() {
     Critical "On"
     try {
         if NotaEditando && (PanelNota is Gui) && IsObject(NotaEditor) {
-            PanelNota.Show()
+            MostrarDialogoMostrador(PanelNota)
             NotaEditor.Focus()
             SendMessage(0xB1, -1, -1, NotaEditor) ; EM_SETSEL: cursor al final
         }
@@ -3635,7 +3877,7 @@ AbrirNotas() {
     if IsObject(Redimension)
         return
     if IsObject(NotasGui) {
-        NotasGui.Show()
+        MostrarDialogoMostrador(NotasGui)
         return
     }
     g := Gui("+AlwaysOnTop", "Notas de clase · Mostrador de teclas")
@@ -3676,7 +3918,7 @@ AbrirNotas() {
     CamposNotas := {mostrar: mostrar, texto: texto, fuente: fuente, tam: tam, negrita: negrita,
         color: color, fondo: fondo, espacios: espacios, lineas: lineas, fondoTeclado: fondoTeclado}
     AplicarTemaAjustes(g)
-    g.Show("w538 h644")
+    MostrarDialogoMostrador(g, "w538 h644")
     texto.Focus()
 }
 
@@ -3765,6 +4007,189 @@ ActualizarMenuSeleccion() {
         A_TrayMenu.Uncheck(item)
 }
 
+HwndGuiMostrador(g, visible := false) {
+    if !(g is Gui)
+        return 0
+    try hwnd := g.Hwnd
+    catch
+        return 0
+    if !hwnd || !DllCall("IsWindow", "ptr", hwnd)
+        return 0
+    return visible && !DllCall("IsWindowVisible", "ptr", hwnd) ? 0 : hwnd
+}
+
+VentanasDialogoMostrador() {
+    global MenuMostradorGui, ClaseGui, ClaseTiemposGui, AjustesMouseGui, NotasGui
+    global AjustesSeleccionGui, AnotAjustes, AnotTextoGui, PanelNota, NotaEditando
+    tiempos := IsSet(ClaseTiemposGui) ? ClaseTiemposGui : 0
+    return [ClaseGui, tiempos, AjustesMouseGui, NotasGui, AjustesSeleccionGui,
+        AnotAjustes, AnotTextoGui, NotaEditando ? PanelNota : 0, MenuMostradorGui]
+}
+
+CapasMostrador() {
+    global FocoClaseGui, overlay, PanelNota, RelojClaseGui, HaloMouse, ControlMinimizar
+    global AnotLienzo, AnotCaptura, AnotBarra
+    ; Del fondo hacia delante. Los diálogos se ordenan al terminar.
+    return [FocoClaseGui, overlay, PanelNota, RelojClaseGui, HaloMouse,
+        ControlMinimizar, AnotLienzo, AnotCaptura, AnotBarra]
+}
+
+RecordarFrenteMostrador(hwnd) {
+    global FrenteOrdenMostrador
+    orden := []
+    for anterior in FrenteOrdenMostrador
+        if anterior != hwnd
+            orden.Push(anterior)
+    orden.Push(hwnd)
+    FrenteOrdenMostrador := orden
+}
+
+MostrarDialogoMostrador(g, opciones := "") {
+    global CerrandoMostrador, AnotModo, AnotTextoGui
+    if CerrandoMostrador || !HwndGuiMostrador(g)
+        return
+    ; Los atajos de herramientas no deben interceptar la escritura en un diálogo.
+    if AnotModo && HwndGuiMostrador(g) != HwndGuiMostrador(AnotTextoGui)
+        PausarAnotaciones()
+    criticoAnterior := A_IsCritical
+    Critical "On"
+    try {
+        g.Show(opciones)
+        hwnd := HwndGuiMostrador(g, true)
+        if !hwnd
+            return
+        RecordarFrenteMostrador(hwnd)
+        DllCall("SetWindowPos", "ptr", hwnd, "ptr", -1, "int", 0, "int", 0,
+            "int", 0, "int", 0, "uint", 0x0213)
+        ; Sólo una apertura solicitada activa la ventana. Reposicionar capas no lo hace.
+        try WinActivate("ahk_id " hwnd)
+        MantenerFrenteDialogosMostrador()
+    } finally {
+        Critical criticoAnterior
+    }
+}
+
+MostrarCapaMostrador(g, x, y, w, h) {
+    global CerrandoMostrador
+    hwnd := HwndGuiMostrador(g)
+    if CerrandoMostrador || !hwnd
+        return
+    if DllCall("IsWindowVisible", "ptr", hwnd) {
+        ; NOMOVE/NOSIZE no se usan: sólo conservar Z y activación, también para notas.
+        DllCall("SetWindowPos", "ptr", hwnd, "ptr", 0, "int", x, "int", y,
+            "int", w, "int", h, "uint", 0x0214)
+    } else {
+        g.Show(Format("x{} y{} w{} h{} NoActivate", x, y, w, h))
+        ReordenarCapasMostrador()
+    }
+}
+
+ActivacionDialogosMostrador(wParam, lParam, msg, hwnd) {
+    global CerrandoMostrador
+    if CerrandoMostrador || (wParam & 0xFFFF) = 0
+        return
+    for g in VentanasDialogoMostrador() {
+        if HwndGuiMostrador(g) = hwnd {
+            RecordarFrenteMostrador(hwnd)
+            return
+        }
+    }
+}
+
+CambioCapasMostrador(wParam, lParam, msg, hwnd) {
+    global CerrandoMostrador, FrenteReordenandoMostrador
+    if CerrandoMostrador || FrenteReordenandoMostrador || !lParam
+        return
+    ; WINDOWPOS.flags: ignorar los movimientos que ya conservan el orden Z.
+    if NumGet(lParam, 2 * A_PtrSize + 16, "uint") & 0x0004
+        return
+    for g in CapasMostrador() {
+        if HwndGuiMostrador(g, true) = hwnd {
+            SetTimer(ReordenarCapasMostrador, -1)
+            return
+        }
+    }
+}
+
+OrdenarDialogosMostradorInterno() {
+    global FrenteOrdenMostrador
+    visibles := Map(), orden := []
+    for g in VentanasDialogoMostrador() {
+        hwnd := HwndGuiMostrador(g, true)
+        if hwnd
+            visibles[hwnd] := true
+    }
+    for hwnd in FrenteOrdenMostrador {
+        if visibles.Has(hwnd) {
+            orden.Push(hwnd)
+            visibles.Delete(hwnd)
+        }
+    }
+    for hwnd, valor in visibles
+        orden.Push(hwnd)
+    ; Conservar también los selectores y mensajes nativos que está usando el usuario.
+    frente := DllCall("GetForegroundWindow", "ptr")
+    proceso := 0
+    if frente
+        DllCall("GetWindowThreadProcessId", "ptr", frente, "uint*", &proceso)
+    esCapa := false
+    if proceso = ProcessExist() {
+        for g in CapasMostrador()
+            if HwndGuiMostrador(g) = frente
+                esCapa := true
+        if !esCapa {
+            sinFrente := []
+            for hwnd in orden
+                if hwnd != frente
+                    sinFrente.Push(hwnd)
+            sinFrente.Push(frente)
+            orden := sinFrente
+        }
+    }
+    FrenteOrdenMostrador := orden.Clone()
+    for hwnd in orden {
+        if DllCall("IsWindow", "ptr", hwnd) && DllCall("IsWindowVisible", "ptr", hwnd)
+            DllCall("SetWindowPos", "ptr", hwnd, "ptr", -1, "int", 0, "int", 0,
+                "int", 0, "int", 0, "uint", 0x0213)
+    }
+}
+
+MantenerFrenteDialogosMostrador() {
+    global CerrandoMostrador, FrenteReordenandoMostrador
+    if CerrandoMostrador || FrenteReordenandoMostrador
+        return
+    criticoAnterior := A_IsCritical
+    Critical "On"
+    try {
+        FrenteReordenandoMostrador := true
+        OrdenarDialogosMostradorInterno()
+    } finally {
+        FrenteReordenandoMostrador := false
+        Critical criticoAnterior
+    }
+}
+
+ReordenarCapasMostrador() {
+    global CerrandoMostrador, FrenteReordenandoMostrador
+    if CerrandoMostrador || FrenteReordenandoMostrador
+        return
+    criticoAnterior := A_IsCritical
+    Critical "On"
+    try {
+        FrenteReordenandoMostrador := true
+        for g in CapasMostrador() {
+            hwnd := HwndGuiMostrador(g, true)
+            if hwnd
+                DllCall("SetWindowPos", "ptr", hwnd, "ptr", -1, "int", 0, "int", 0,
+                    "int", 0, "int", 0, "uint", 0x0213)
+        }
+        OrdenarDialogosMostradorInterno()
+    } finally {
+        FrenteReordenandoMostrador := false
+        Critical criticoAnterior
+    }
+}
+
 AbrirMenuAjustes(*) {
     global MenuMostradorGui, MenuMostradorControles, AnotModo, CerrandoMostrador
     if CerrandoMostrador
@@ -3813,7 +4238,7 @@ AbrirMenuAjustes(*) {
         pos := PosicionEnPantalla(x, y, w, h)
         g.Show(Format("Hide x{} y{} w{} h{}", pos[1], pos[2], w, h))
         RedondearNota(g, w, h, Round(18 * s))
-        g.Show()
+        MostrarDialogoMostrador(g)
     } catch as err {
         CerrarMenuMostrador()
         MsgBox("No se pudo abrir el menú: " err.Message, "Mostrador")
@@ -3864,7 +4289,7 @@ AbrirAjustesSeleccion(*) {
     global AjustesSeleccionGui, CamposSeleccion, SeleccionActivo, SeleccionFondo, SeleccionTexto, SeleccionSombra
     global SeleccionGrosor, SeleccionNegrita
     if IsObject(AjustesSeleccionGui) {
-        AjustesSeleccionGui.Show()
+        MostrarDialogoMostrador(AjustesSeleccionGui)
         return
     }
     g := Gui("+AlwaysOnTop", "Selección de texto · Mostrador")
@@ -3894,7 +4319,7 @@ AbrirAjustesSeleccion(*) {
     g.OnEvent("Close", CerrarAjustesSeleccion)
     g.OnEvent("Escape", CerrarAjustesSeleccion)
     AplicarTemaAjustes(g)
-    g.Show("w530 h508")
+    MostrarDialogoMostrador(g, "w530 h508")
 }
 
 RestablecerSeleccion(*) {
@@ -3950,7 +4375,7 @@ IniciarAnotaciones(*) {
     if ClaseGui is Gui
         CerrarPanelClase()
     if AnotTextoGui is Gui {
-        AnotTextoGui.Show()
+        MostrarDialogoMostrador(AnotTextoGui)
         return
     }
     criticoAnterior := A_IsCritical
@@ -4022,7 +4447,7 @@ PausarAnotaciones(*) {
     global AnotModo, AnotPausa, AnotActual, AnotCaptura, AnotBarra, AnotHwndCaptura
     global AnotTextoPendiente, AnotTextoEdicion, AnotDuracion, AnotTextoGui
     if AnotTextoGui is Gui {
-        AnotTextoGui.Show()
+        MostrarDialogoMostrador(AnotTextoGui)
         return
     }
     criticoAnterior := A_IsCritical
@@ -4126,7 +4551,7 @@ CrearBarraAnotaciones() {
     AnotDeshacerBoton := BotonPaletaAnotacion(g, "↶  Deshacer", 16, 168, 112, 32, DeshacerAnotacion)
     AnotRehacerBoton := BotonPaletaAnotacion(g, "↷  Rehacer", 136, 168, 112, 32, RehacerAnotacion)
     AnotBorrarBoton := BotonPaletaAnotacion(g, "Borrar todo", 256, 168, 132, 32, BorrarAnotaciones, "352126", "FF9AAA")
-    BotonPaletaAnotacion(g, "Volver", 396, 168, 132, 32, FinalizarAnotaciones)
+    BotonPaletaAnotacion(g, "Cerrar todo", 396, 168, 132, 32, (*) => CerrarAnotaciones())
     AnotPausaBoton := BotonPaletaAnotacion(g, "Usar escritorio", 16, 208, 512, 32, AlternarPausaAnotaciones, "203044", "A9CDFF")
     ActualizarPaletaAnotaciones()
     punto := Buffer(8, 0)
@@ -4555,25 +4980,27 @@ CerrarAnotaciones(*) {
 
 GuardarAnotacionesConfig() {
     global ArchivoConfig, AnotHerramienta, AnotColor, AnotGrosor, AnotDuracion, AnotTextoTam, AnotTextoNegrita
-    for clave, valor in Map("Herramienta", AnotHerramienta, "Color", AnotColor, "Grosor", AnotGrosor, "DuracionSeg", AnotDuracion, "TextoTam", AnotTextoTam, "TextoNegrita", AnotTextoNegrita)
+    global AnotBorradoManual
+    AnotBorradoManual := AnotDuracion = 0
+    for clave, valor in Map("Herramienta", AnotHerramienta, "Color", AnotColor, "Grosor", AnotGrosor, "DuracionSeg", AnotDuracion, "BorradoManual", AnotBorradoManual, "TextoTam", AnotTextoTam, "TextoNegrita", AnotTextoNegrita)
         IniWrite(valor, ArchivoConfig, "Anotaciones", clave)
 }
 
 AbrirAjustesAnotaciones(*) {
     global AnotAjustes, AnotCampos, AnotColor, AnotGrosor, AnotDuracion, AnotHerramienta, AnotTextoTam, AnotTextoNegrita, AnotTextoGui
     if AnotTextoGui is Gui {
-        AnotTextoGui.Show()
+        MostrarDialogoMostrador(AnotTextoGui)
         return
     }
     FinalizarAnotaciones()
     if AnotAjustes is Gui {
-        AnotAjustes.Show()
+        MostrarDialogoMostrador(AnotAjustes)
         return
     }
-    g := Gui("+AlwaysOnTop", "Anotaciones temporales · Mostrador")
+    g := Gui("+AlwaysOnTop", "Anotaciones · Mostrador")
     AnotAjustes := g
     g.SetFont("s15 cF1F1F1 bold", "Segoe UI")
-    g.AddText("x18 y16 w475 h30", "Anotaciones temporales")
+    g.AddText("x18 y16 w475 h30", "Anotaciones")
     g.SetFont("s10 cF1F1F1 norm", "Segoe UI")
     g.AddText("x18 y76 w180 h25", "Herramienta inicial")
     herramienta := g.AddDropDownList("x202 y72 w293", ["Trazo", "Flecha", "Óvalo", "Marco", "Línea", "Texto"])
@@ -4582,16 +5009,17 @@ AbrirAjustesAnotaciones(*) {
     g.AddText("x18 y174 w180 h25", "Grosor del trazo")
     grosor := g.AddEdit("x202 y170 w80 Number", AnotGrosor)
     g.AddUpDown("Range2-16", AnotGrosor)
-    g.AddText("x18 y222 w180 h25", "Duración en segundos")
+    g.AddText("x18 y222 w180 h25", "Borrado automático (s)")
     duracion := g.AddEdit("x202 y218 w80 Number", AnotDuracion)
     g.AddUpDown("Range0-60", AnotDuracion)
+    g.AddText("x300 y222 w195 h25", "0 = conservar hasta borrar")
     g.AddText("x18 y270 w180 h25", "Tamaño de letra")
     letra := g.AddEdit("x202 y266 w80 Number", AnotTextoTam)
     g.AddUpDown("Range10-96", AnotTextoTam)
     negrita := g.AddCheckbox("x300 y266 w160 h26", "Negrita")
     negrita.Value := AnotTextoNegrita
     g.SetFont("s9 cAAAAAA", "Segoe UI")
-    g.AddText("x18 y316 w475 h68", "0 conserva las marcas hasta borrarlas. Esc sale del modo dibujo y permite usar las ventanas. Ctrl+Z o clic derecho deshace; Supr borra. Ctrl+Alt+X borra también fuera del modo dibujo.")
+    g.AddText("x18 y316 w475 h68", "0 conserva textos y dibujos. De 1 a 60 s activa el borrado automático. Esc y la X sólo ocultan la paleta. Borrar todo limpia el lienzo; Cerrar todo borra la sesión y cierra esta herramienta. Ctrl+Z deshace.")
     g.SetFont("s10 cF1F1F1", "Segoe UI")
     g.AddButton("x222 y404 w173 h34 Default", "Guardar y dibujar").OnEvent("Click", AplicarAjustesAnotaciones)
     g.AddButton("x405 y404 w90 h34", "Cerrar").OnEvent("Click", CerrarAjustesAnotaciones)
@@ -4599,7 +5027,7 @@ AbrirAjustesAnotaciones(*) {
     g.OnEvent("Close", CerrarAjustesAnotaciones)
     g.OnEvent("Escape", CerrarAjustesAnotaciones)
     AplicarTemaAjustes(g)
-    g.Show("w515 h458")
+    MostrarDialogoMostrador(g, "w515 h458")
 }
 
 AplicarAjustesAnotaciones(*) {
@@ -4679,7 +5107,7 @@ AbrirTextoAnotacion() {
         AplicarTemaAjustes(g)
         RedondearNota(g, ancho, alto, Round(12 * escala))
         pos := PosicionEnPantalla(AnotX + AnotTextoPunto[1], AnotY + AnotTextoPunto[2], ancho, alto)
-        g.Show(Format("x{} y{} w{} h{}", pos[1], pos[2], ancho, alto))
+        MostrarDialogoMostrador(g, Format("x{} y{} w{} h{}", pos[1], pos[2], ancho, alto))
         texto.Focus()
         SendMessage(0xB1, -1, -1, texto)
     } finally {

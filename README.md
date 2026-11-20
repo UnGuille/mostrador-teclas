@@ -42,7 +42,8 @@ El icono de reloj se dibuja con círculo y manecillas, sin fuentes de iconos esp
 
 Reúne los controles para preparar una actividad sin llenar la pantalla de botones:
 
-- **Temporizador:** elige 1, 3, 5 o 10 minutos, escribe una duración entre 1 y 180,
+- **Temporizador:** cuatro tiempos rápidos editables (1, 3, 5 y 10 minutos inicialmente),
+  tres duraciones más usadas y una duración personalizada entre 1 y 180 minutos;
   añade un minuto, pausa, continúa o reinicia. **Ctrl + Alt + P** inicia o pausa
   sin abrir el panel. Cambiar un tiempo rápido prepara una nueva cuenta sin iniciarla.
   El tiempo elegido se destaca; usa **− / +** o escribe los minutos. **Enter**
@@ -62,6 +63,18 @@ Reúne los controles para preparar una actividad sin llenar la pantalla de boton
 - **Accesos rápidos:** minimizar o expandir el teclado, activar o apagar el aura,
   dibujar y editar las notas. El aura y el foco se controlan por separado.
 
+Los cuatro **Tiempos rápidos** se pueden cambiar desde **Editar**, encima de sus
+botones. Escribe cuatro duraciones diferentes entre 1 y 180 minutos y pulsa
+**Guardar**: los accesos se actualizan en el mismo panel, sin reiniciarlo.
+
+La fila **Más usados** muestra hasta tres duraciones y permite prepararlas con
+un clic. Se ordenan por número de sesiones iniciadas; en los empates se prioriza
+la utilizada más recientemente. Pausar y continuar una cuenta no suma usos nuevos.
+La fila empieza vacía y se completa a medida que inicias temporizadores.
+
+Los accesos se guardan en `[Clase] TiemposRapidos` y las frecuencias en `[ClaseUso]`
+de `overlay-config.ini`. Se mantienen al cerrar y abrir el programa y son locales.
+
 Las preferencias se guardan en `[Clase]` de `overlay-config.ini`, incluida la
 posición del reloj. Al desconectar una pantalla, el reloj y el panel se recolocan
 en una disponible. El temporizador y el foco se inician apagados al abrir el programa.
@@ -77,6 +90,11 @@ El engrane abre una paleta oscura de tarjetas con accesos claros al panel de
 clase, mouse y aura, notas, selección y anotaciones. Se coloca junto al cursor y se
 ajusta a la pantalla disponible. Elige una tarjeta, pulsa **Esc** o haz clic fuera
 para cerrarla. Al abrirla durante el dibujo, se libera la captura del escritorio.
+
+Los paneles de ajustes se abren por delante del teclado y conservan su orden
+mientras se recolocan el mostrador, las notas o las ayudas. Sólo abrir o recuperar
+un panel lo activa; los reajustes de las capas mantienen el foco en la aplicación
+que estés usando.
 
 Los botones de los ajustes de mouse, notas, selección y anotaciones comparten
 superficies redondeadas, estados al pasar el cursor y un indicador de foco
@@ -276,7 +294,7 @@ con el teclado por defecto. Para elegir otro color, desmarca **Usar el mismo fon
 del teclado** en los ajustes de la nota y cambia **Fondo personalizado**.
 
 
-## Anotaciones temporales sobre la pantalla
+## Anotaciones sobre la pantalla
 
 Pulsa el **botón azul de dibujo** junto a las notas, ⚙ y minimizar, o usa
 **Ctrl izquierdo + Alt izquierdo + A**. Se abre una paleta flotante oscura con
@@ -286,16 +304,16 @@ herramientas, colores y acciones. Arrastra su cabecera para moverla.
 - **Colores rápidos** y botones **− / +** para cambiar el grosor desde la paleta.
 - **Deshacer y Rehacer**, también después de **Borrar todo**.
 - **Usar escritorio / Dibujar** para alternar entre manejar las ventanas y anotar.
-- **Volver** o **Esc** para salir del dibujo y ocultar la paleta.
+- **Esc / X** para ocultar la paleta conservando las marcas; **Cerrar todo** para borrar la sesión y cerrar esa herramienta.
 - **⚙** para elegir cualquier color y modificar la herramienta inicial y la duración.
 
 El botón **Usar escritorio** pausa la captura del dibujo y deja la paleta
 visible: puedes cambiar de diapositiva, desplazarte o usar cualquier programa.
 Pulsa **Dibujar** para continuar desde la misma posición de la paleta. Las marcas
-siguen visibles mientras dure su tiempo configurado; la pausa permite que los clics
-lleguen a las aplicaciones. También puedes arrastrar la cabecera mientras está
-pausado. **Volver** o cerrar la paleta termina el modo; **Esc** conserva esa función
-cuando estás dibujando. Los atajos de herramientas quedan libres al usar el escritorio.
+permanecen hasta borrarlas por defecto; la pausa permite que los clics lleguen
+a las aplicaciones. También puedes arrastrar la cabecera mientras está pausado.
+**Esc** y la **X** ocultan la paleta sin borrar las anotaciones. Los atajos de
+herramientas quedan libres al usar el escritorio.
 
 Mientras el modo está activo, arrastra con el botón izquierdo para dibujar sobre
 la pantalla. Las marcas permanecen en su posición aunque cambie el contenido de
@@ -307,13 +325,32 @@ las ventanas. La herramienta seleccionada se distingue con un acento rojo.
 | `Ctrl + Z` o clic derecho en el lienzo | Deshacer |
 | `Ctrl + Y` en modo dibujo | Rehacer |
 | `Supr` en modo dibujo | Borrar todos los dibujos |
-| `Esc` o Volver | Salir del modo dibujo |
+| `Esc` o X | Salir del modo dibujo conservando las anotaciones |
+| Cerrar todo | Borrar la sesión y cerrar las anotaciones |
 | `Ctrl izquierdo + Alt izquierdo + X` | Borrar también fuera del modo dibujo |
 
-Cada dibujo desaparece **8 segundos** después de terminarlo por defecto. Puedes
-ajustar esa duración en **⚙ → Ajustes de anotaciones**. Una duración de **0** conserva
-las marcas hasta borrarlas. Al deshacer o rehacer se renueva la duración de las
-marcas restauradas. El nuevo color y grosor se aplican a los dibujos siguientes.
+Los textos y dibujos permanecen **hasta que los borres o pulses Cerrar todo**
+por defecto. **Usar escritorio** pausa el dibujo con la paleta disponible;
+**Dibujar** permite continuar. **Esc** y la **X** ocultan la paleta y conservan las
+anotaciones terminadas. Puedes volver a abrirla con el botón de dibujo o
+**Ctrl izquierdo + Alt izquierdo + A**.
+
+- **Borrar todo** limpia el lienzo y mantiene abierta la herramienta. **Supr** en
+  modo dibujo o **Ctrl izquierdo + Alt izquierdo + X** también limpian el lienzo;
+  puedes deshacer esa acción mientras siga abierta la sesión de anotaciones.
+- **Cerrar todo** borra los dibujos, los textos y su historial, y cierra la
+  herramienta de anotaciones. El teclado y el resto del programa siguen abiertos.
+
+En **Ajustes de anotaciones**, **Borrado automático (s) = 0** conserva las marcas.
+Elige entre **1 y 60 segundos** para que las anotaciones siguientes desaparezcan
+solas. La elección se guarda: `[Anotaciones] BorradoManual=1` activa el borrado
+manual y `BorradoManual=0` usa `DuracionSeg`. Las configuraciones anteriores que
+no tengan esta preferencia pasan al borrado manual, aunque guardaran ocho segundos.
+
+Las anotaciones están en memoria: cerrar el programa, reiniciarlo o cambiar la
+distribución de pantallas las elimina. Este modo conserva lo escrito durante la
+sesión; no guarda los dibujos en un archivo. Deshacer, rehacer, mover o editar
+textos mantiene el borrado manual cuando está elegido.
 
 Las preferencias se guardan en `[Anotaciones]` de `overlay-config.ini`. Los dibujos
 y su historial permanecen en memoria. Al cerrar el programa o cambiar la distribución
@@ -329,8 +366,8 @@ escribe en el editor oscuro. Puedes usar varias líneas y cambiar el tamaño y l
 negrita. Pulsa **Insertar** o **Ctrl + Enter** para colocarla, o **Esc** para cancelar.
 Mientras escribes, los atajos de dibujo se suspenden para permitir editar el texto.
 
-La anotación usa el color elegido en la paleta, una sombra oscura y la duración
-configurada. El tiempo empieza al insertarla. Puedes deshacerla, rehacerla o borrarla
+La anotación usa el color elegido en la paleta y una sombra oscura. Por defecto
+no caduca; si activaste el borrado automático, el tiempo empieza al insertarla. Puedes deshacerla, rehacerla o borrarla
 como cualquier otro dibujo. Cerca del borde se ajusta su posición para mantenerla
 visible en la pantalla donde pulsaste. El tamaño y la negrita también se guardan
 desde los ajustes de anotaciones.
@@ -345,6 +382,7 @@ el texto seleccionado.
 
 El editor recupera su contenido, tamaño y negrita. **Guardar** o **Ctrl + Enter**
 aplica los cambios al mismo texto; **Esc** cancela la edición. Los movimientos y
-ediciones se pueden deshacer y rehacer. Mientras arrastras o editas un texto se
-pausa su caducidad, y al terminar se renueva su duración. Fuera del modo de
+ediciones se pueden deshacer y rehacer. Si activaste el borrado automático,
+mientras arrastras o editas un texto se pausa su caducidad y al terminar se renueva
+su duración. Con el borrado manual no hay caducidad. Fuera del modo de
 anotaciones, las marcas siguen dejando pasar los clics hacia las aplicaciones.
