@@ -22,7 +22,7 @@ y acentos rojos. Las teclas conservan su relieve y animación de pulsación.
 1. Instala [AutoHotkey v2](https://www.autohotkey.com/).
 2. Descarga `mostrador-teclas.ahk` y `mostrador-seleccion.ahk` en la misma carpeta. Haz doble clic en `mostrador-teclas.ahk`.
 3. El mostrador inicia **desbloqueado**, para que puedas arrastrarlo hasta donde prefieras. En el primer inicio aparece en la esquina inferior derecha; después utiliza la posición guardada.
-4. Pulsa **Ctrl + Alt + L** para bloquearlo cuando esté en su sitio. Al bloquearlo, los clics atraviesan el mostrador.
+4. Pulsa **Ctrl + Alt + L** para bloquearlo cuando esté en su sitio. Con la demostración por mouse desactivada, los clics atraviesan el mostrador bloqueado.
 
 Sin configuración previa, el mouse visual y el halo del cursor están activados. Puedes apagarlos de forma independiente; tu preferencia queda guardada.
 
@@ -126,6 +126,23 @@ Pulsa el botón **− de la esquina superior derecha** para ocultar el teclado, 
 - El resplandor del cursor mantiene su estado: puedes dejar solo el halo y el icono en pantalla, o apagar el halo con **Ctrl + Alt + M**.
 - Pulsar teclas, hacer clic o usar la rueda **no expande automáticamente** el mostrador. El historial sigue conservando únicamente las teclas recientes.
 - Al expandir se mantienen el tamaño, la posición y las opciones elegidas. El modo minimizado dura hasta que lo expandas o cierres el programa; al volver a iniciar se abre expandido.
+
+## Demostrar atajos con el mouse
+
+Haz clic en las teclas del teclado visual para seleccionar un atajo sin ejecutarlo.
+Por ejemplo, pulsa **Ctrl** y después **C**: las dos teclas quedan iluminadas y
+hundidas, con **DEMOSTRACIÓN · Ctrl + C** en la cabecera. No se envían teclas a
+Windows ni a ninguna aplicación. Otro clic sobre una tecla la desmarca.
+
+La selección permanece hasta que vuelvas a pulsar una tecla en el teclado físico;
+entonces se limpia y continúa la visualización normal. Los clics y la rueda no
+borran la selección. Mientras haya una demostración, el teclado no se autooculta.
+El modo está habilitado por defecto, funciona con la posición bloqueada y se
+puede desactivar en la bandeja: **Demostrar atajos con el mouse**. Su preferencia
+se guarda en `[Teclado] DemostracionMouse`. Cuando está activo, el teclado recibe
+los clics incluso bloqueado para permitir la demostración; al desactivarlo, el
+bloqueo vuelve a dejar pasar los clics. Arrastra un espacio libre del mostrador
+desbloqueado para moverlo. Las teclas seleccionadas son temporales de la sesión.
 
 ## Leer el historial
 

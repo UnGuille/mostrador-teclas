@@ -79,6 +79,8 @@ global MouseRueda := LeerColorTema("Mouse", "ColorRueda", "5AB0FF", "8AB4F8")
 global HaloX := "", HaloY := ""
 
 ; ---------------- ESTADO ----------------
+global DemostracionMouse := Integer(IniRead(ArchivoConfig, "Teclado", "DemostracionMouse", "1")) != 0
+global TeclasDemostracion := Map()
 global Bloqueado := false, Visible := false
 global MostrarHistorial := Integer(IniRead(ArchivoConfig, "Historial", "Mostrar", "1"))
 global Historial := [], UltimaTick := 0, AvisoActual := ""
@@ -166,6 +168,7 @@ global AnotDuracion := AnotBorradoManual ? 0 : Max(0, Min(60, Integer(IniRead(Ar
 
 try {
     OnExit(CerrarMostrador)
+    OnMessage(0x0020, CursorDemostracionMouse)
     OnMessage(0x0232, GuardarGeometriaBarraAnotaciones)
     OnMessage(0x0047, ProgramarAreaCapturaAnotaciones)
     OnMessage(0x0006, ActivacionDialogosMostrador)
@@ -205,6 +208,7 @@ try {
 
     OnMessage(0x0201, ArrastrarRelojClase)
     OnMessage(0x0232, GuardarPosicionRelojClase)
+    OnMessage(0x0203, AlPresionarMouse)
     OnMessage(0x0201, AlPresionarMouse)    ; WM_LBUTTONDOWN -> arrastrar
     OnMessage(0x0232, AlTerminarArrastre)  ; WM_EXITSIZEMOVE -> guardar posicion
 
@@ -402,6 +406,7 @@ CargarNombres() {
 Construir() {
     global overlay, txtCombo, txtPrev, Teclas, U, GuiW, GuiH, Visible, HwndTeclado
     global Escala, Bloqueado, MostrarTeclado, Col, Posiciones, Leyendas, Especiales, MostrarMouse, PartesMouse
+    global DemostracionMouse, TeclasDemostracion
     global HistorialPic, HistorialBitmap, HistorialW, HistorialH, MostrarHistorial
 
     DestruirPanelNota()
@@ -421,7 +426,7 @@ Construir() {
     pad := Round(U * 0.3)
 
     ; -DPIScale: pixeles reales.  +E0x20: los clics atraviesan la ventana (bloqueado)
-    overlay := Gui("+AlwaysOnTop -Caption +Resize -MinimizeBox -MaximizeBox +ToolWindow -DPIScale" (Bloqueado ? " +E0x20" : ""))
+    overlay := Gui("+AlwaysOnTop -Caption +Resize -MinimizeBox -MaximizeBox +ToolWindow -DPIScale +E0x08000000" (Bloqueado && !DemostracionMouse ? " +E0x20" : ""))
     HwndTeclado := overlay.Hwnd
     ; Aplicar el area cliente completa una vez que el HWND ya esta disponible.
     DllCall("SetWindowPos", "ptr", overlay.Hwnd, "ptr", 0, "int", 0, "int", 0,
@@ -513,12 +518,14 @@ Construir() {
             }
         }
         SendMessage(0x172, 0, bmps["|0"], pic)   ; STM_SETIMAGE
-        Teclas[pos.sc] := {pic: pic, bmps: bmps, estado: "|0", color: "",
+        Teclas[pos.sc] := {pic: pic, bmps: bmps, x: kx, y: ky, w: kw, h: kh, estado: "|0", color: "",
             nivel: 0.0, desde: 0.0, objetivo: 0, inicio: 0, pulso: -1000}
     }
 
     if MostrarMouse
         ConstruirMouseVisual(pad + anchoTec + Round(U * 0.4), top + Round(U * 0.5))
+    for sc in TeclasDemostracion
+        PintarTecla(sc, EsModificador(sc) ? "mod" : "normal")
 
     WinSetTransparent(255, overlay)
 }
@@ -528,13 +535,13 @@ Leg(x, y, w, h, texto, px, negrita, rol, align) {
 }
 
 PintarTecla(sc, estado) {
-    global Teclas, Presionadas, Minimizado
+    global Teclas, Presionadas, Minimizado, TeclasDemostracion
     if Minimizado
         return
     if !Teclas.Has(sc)
         return
     k := Teclas[sc]
-    k.color := estado
+    k.color := TeclasDemostracion.Has(sc) ? (EsModificador(sc) ? "mod" : "normal") : estado
     if Presionadas.Has(sc)
         k.pulso := Presionadas[sc]
     ActualizarAnimacionTecla(sc, k, A_TickCount)
@@ -558,10 +565,10 @@ AnimarTeclas() {
 }
 
 ActualizarAnimacionTecla(sc, k, ahora) {
-    global Presionadas
+    global Presionadas, TeclasDemostracion
     ; Tambien las pulsaciones rapidas llegan a verse antes de volver a subir.
     minimoVisible := ahora - k.pulso < 180
-    objetivo := (Presionadas.Has(sc) || minimoVisible) ? 6 : 0
+    objetivo := (Presionadas.Has(sc) || TeclasDemostracion.Has(sc) || minimoVisible) ? 6 : 0
     if (objetivo != k.objetivo) {
         k.desde := k.nivel
         k.objetivo := objetivo
@@ -681,6 +688,7 @@ TeclaAbajo(ih, vk, sc) {
         return
     if (sc = 0x136)
         sc := 0x36
+    LimpiarDemostracionMouse()
     if Presionadas.Has(sc)          ; tecla mantenida (autorrepeticion)
         return
 
@@ -710,10 +718,12 @@ TeclaArriba(ih, vk, sc) {
 }
 
 ManejarMouse(HotkeyName) {
-    global EventosMouse
+    global EventosMouse, DemostracionMouse
     boton := SubStr(HotkeyName, 3)
     EventosMouse[boton] := A_TickCount
     RefrescarMouseVisual()
+    if DemostracionMouse && MouseEnMostrador()
+        return
     txt := ""
     for m in ModsActivos()
         txt .= m " + "
@@ -826,6 +836,7 @@ QuitarUltimo(texto) {
 }
 
 Refrescar() {
+    global TeclasDemostracion
     global Historial, MostrarTeclado, txtCombo, AvisoActual, MostrarHistorial
     global HistorialPic, HistorialBitmap, HistorialW, HistorialH, Redimension, Minimizado
     if Minimizado
@@ -834,7 +845,7 @@ Refrescar() {
         return
     if (MostrarTeclado || !MostrarHistorial) {
         n := Historial.Length
-        txtCombo.Text := AvisoActual != "" ? AvisoActual : n ? "AHORA  " Historial[n] : "AHORA  —"
+        txtCombo.Text := TeclasDemostracion.Count ? "DEMOSTRACIÓN  " TextoDemostracionMouse() : AvisoActual != "" ? AvisoActual : n ? "AHORA  " Historial[n] : "AHORA  —"
     }
     if !MostrarHistorial {
         Mostrar()
@@ -872,6 +883,7 @@ Ocultar() {
 ; Cada 100 ms: limpia teclas "pegadas", apaga las que ya se soltaron
 ; y oculta la ventana si no hay actividad.
 Tick() {
+    global TeclasDemostracion
     global Presionadas, Soltadas, ResaltadoMs, AutoOcultar, Bloqueado, Visible, UltimaTick, DuracionMs, NotaEditando
     RefrescarMouseVisual()
     ahora := A_TickCount
@@ -895,7 +907,7 @@ Tick() {
         PintarTecla(sc, "")
     }
 
-    if (Visible && AutoOcultar && Bloqueado && !NotaEditando && !Presionadas.Count && !Soltadas.Count
+    if (Visible && AutoOcultar && Bloqueado && !NotaEditando && !TeclasDemostracion.Count && !Presionadas.Count && !Soltadas.Count
         && ahora - UltimaTick >= DuracionMs)
         Ocultar()
 }
@@ -920,9 +932,9 @@ AlternarBloqueo() {
     global Redimension
     if IsObject(Redimension)
         return
-    global Bloqueado, overlay
+    global Bloqueado, overlay, DemostracionMouse
     Bloqueado := !Bloqueado
-    overlay.Opt(Bloqueado ? "+E0x20" : "-E0x20")
+    overlay.Opt(Bloqueado && !DemostracionMouse ? "+E0x20" : "-E0x20")
     AgregarAlHistorial(Bloqueado ? "Posición bloqueada" : "Desbloqueado: arrastra para mover")
 }
 
@@ -992,10 +1004,106 @@ RestablecerPosicion() {
     ActualizarControlMinimizar()
 }
 
+; Selección exclusivamente visual: no usa Send ni genera eventos de teclado.
+TeclaMouseDemostracion() {
+    global DemostracionMouse, MostrarTeclado, Teclas, HwndTeclado, Minimizado
+    if !DemostracionMouse || !MostrarTeclado || Minimizado || !HwndTeclado
+        return 0
+    punto := Buffer(8, 0)
+    if !DllCall("GetCursorPos", "ptr", punto) || !DllCall("ScreenToClient", "ptr", HwndTeclado, "ptr", punto)
+        return 0
+    x := NumGet(punto, 0, "int"), y := NumGet(punto, 4, "int")
+    for sc, k in Teclas
+        if x >= k.x && x < k.x + k.w && y >= k.y && y < k.y + k.h
+            return sc
+    return 0
+}
+
+MouseEnMostrador() {
+    global HwndTeclado
+    if !HwndTeclado
+        return false
+    punto := Buffer(8, 0)
+    if !DllCall("GetCursorPos", "ptr", punto)
+        return false
+    hwnd := DllCall("WindowFromPoint", "int64", NumGet(punto, 0, "int64"), "ptr")
+    return hwnd && DllCall("GetAncestor", "ptr", hwnd, "uint", 2, "ptr") = HwndTeclado
+}
+
+TextoDemostracionMouse() {
+    global TeclasDemostracion
+    texto := "", nombres := Map()
+    for modificador in [true, false] {
+        for sc in TeclasDemostracion {
+            if !!EsModificador(sc) != modificador
+                continue
+            nombre := NombreTecla(sc, 0)
+            if nombres.Has(nombre)
+                continue
+            nombres[nombre] := true
+            texto .= (texto = "" ? "" : " + ") nombre
+        }
+    }
+    return texto
+}
+
+SeleccionarTeclaDemostracion(sc) {
+    global TeclasDemostracion, Presionadas, Soltadas, UltimaTick
+    if TeclasDemostracion.Has(sc)
+        TeclasDemostracion.Delete(sc)
+    else
+        TeclasDemostracion[sc] := true
+    PintarTecla(sc, (Presionadas.Has(sc) || Soltadas.Has(sc)) ? (EsModificador(sc) ? "mod" : "normal") : "")
+    UltimaTick := A_TickCount
+    if TeclasDemostracion.Count
+        AgregarAlHistorial(TextoDemostracionMouse(), true)
+    else
+        AgregarAlHistorial("Demostración borrada · selecciona otras teclas")
+}
+
+LimpiarDemostracionMouse() {
+    global TeclasDemostracion, Presionadas, Soltadas
+    if !TeclasDemostracion.Count
+        return
+    anteriores := TeclasDemostracion
+    TeclasDemostracion := Map()
+    for sc in anteriores
+        PintarTecla(sc, (Presionadas.Has(sc) || Soltadas.Has(sc)) ? (EsModificador(sc) ? "mod" : "normal") : "")
+    Refrescar()
+}
+
+AlternarDemostracionMouse(*) {
+    global DemostracionMouse, Bloqueado, overlay, ArchivoConfig
+    DemostracionMouse := !DemostracionMouse
+    LimpiarDemostracionMouse()
+    if VentanaMostradorDisponible()
+        overlay.Opt(Bloqueado && !DemostracionMouse ? "+E0x20" : "-E0x20")
+    IniWrite(DemostracionMouse, ArchivoConfig, "Teclado", "DemostracionMouse")
+    A_TrayMenu.ToggleCheck("Demostrar atajos con el mouse")
+    AgregarAlHistorial(DemostracionMouse ? "Haz clic en las teclas para mostrar un atajo sin ejecutarlo" : "Demostración con mouse desactivada")
+}
+
+CursorDemostracionMouse(wParam, lParam, msg, hwnd) {
+    global HwndTeclado, CerrandoMostrador
+    if CerrandoMostrador || !HwndTeclado || (lParam & 0xFFFF) != 1
+        return
+    if DllCall("GetAncestor", "ptr", hwnd, "uint", 2, "ptr") = HwndTeclado && TeclaMouseDemostracion() {
+        DllCall("SetCursor", "ptr", DllCall("LoadCursorW", "ptr", 0, "ptr", 32649, "ptr"))
+        return 1
+    }
+}
+
 AlPresionarMouse(wParam, lParam, msg, hwnd) {
     if !VentanaMostradorDisponible()
         return
     global overlay, Bloqueado
+    if IsObject(overlay) && (hwnd = overlay.Hwnd || DllCall("GetAncestor", "ptr", hwnd, "uint", 2, "ptr") = overlay.Hwnd) {
+        sc := TeclaMouseDemostracion()
+        if sc {
+            SeleccionarTeclaDemostracion(sc)
+            return 0
+        }
+    }
     if (Bloqueado || !IsObject(overlay))
         return
     if (hwnd = overlay.Hwnd || DllCall("GetAncestor", "ptr", hwnd, "uint", 2, "ptr") = overlay.Hwnd) {
@@ -2366,8 +2474,11 @@ CerrarHerramientasClase() {
 }
 
 ConfigurarBandeja() {
-    global MostrarMouse, MostrarHistorial
+    global MostrarMouse, MostrarHistorial, DemostracionMouse
     A_TrayMenu.Delete()
+    A_TrayMenu.Add("Demostrar atajos con el mouse", AlternarDemostracionMouse)
+    if DemostracionMouse
+        A_TrayMenu.Check("Demostrar atajos con el mouse")
     A_TrayMenu.Add("Panel de clase...  (Ctrl+Alt+C)", AbrirPanelClase)
     A_TrayMenu.Add("Iniciar / pausar temporizador  (Ctrl+Alt+P)", AlternarTemporizadorClase)
     A_TrayMenu.Add("Foco del cursor  (Ctrl+Alt+E)", AlternarFocoClase)
@@ -3511,6 +3622,8 @@ VentanaMostradorDisponible(hwnd := 0) {
 CerrarMostrador(*) {
     global CerrandoMostrador, HwndTeclado, overlay, ih, HistorialBitmap, Redimension
     CerrandoMostrador := true
+    OnMessage(0x0020, CursorDemostracionMouse, 0)
+    OnMessage(0x0203, AlPresionarMouse, 0)
     OnMessage(0x0232, GuardarGeometriaBarraAnotaciones, 0)
     OnMessage(0x0047, ProgramarAreaCapturaAnotaciones, 0)
     LiberarAreaCapturaAnotaciones()
