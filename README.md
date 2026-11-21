@@ -324,7 +324,10 @@ se adaptan al espacio. La posición y el tamaño se guardan en `[Anotaciones]`
 de `overlay-config.ini` (`BarraX`, `BarraY`, `BarraAncho`, `BarraAlto`).
 Al desconectar una pantalla, la posición guardada se ajusta a una disponible.
 
-Las seis herramientas conservan sus nombres para reconocerlas fácilmente.
+Cada herramienta combina su nombre con un icono dibujado a su izquierda:
+trazo ondulado, flecha, óvalo, marco rectangular, línea y **Aa** para texto.
+El icono y el nombre destacan juntos al seleccionar la herramienta y se adaptan
+al tamaño de la barra. No requieren imágenes externas ni fuentes de iconos.
 Debajo están los colores, el grosor o tamaño de letra, **↶ / ↷** para deshacer
 y rehacer, **Escritorio / Dibujar**, borrar, ajustes, ocultar y cerrar todo.
 

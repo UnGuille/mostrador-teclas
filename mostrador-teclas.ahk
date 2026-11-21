@@ -4781,8 +4781,10 @@ MostrarCapturaAnotaciones() {
 CrearBarraAnotaciones() {
     global AnotBarra, AnotBotones, AnotColores, AnotArrastre, AnotEstado, AnotBarraElementos
     global AnotGrosorTexto, AnotGrosorEtiqueta, AnotDeshacerBoton, AnotRehacerBoton, AnotBorrarBoton, AnotPausaBoton, ArchivoConfig
-    if AnotBarra is Gui
+    if AnotBarra is Gui {
+        LiberarImagenesModernas(AnotBarra)
         AnotBarra.Destroy()
+    }
     AnotBarraElementos := [], AnotBotones := Map(), AnotColores := Map(), AnotArrastre := Map(), AnotEstado := 0
     g := Gui("+AlwaysOnTop -Caption +Resize -MinimizeBox -MaximizeBox +ToolWindow -DPIScale +E0x08000000", "Anotaciones")
     AnotBarra := g
@@ -4791,7 +4793,7 @@ CrearBarraAnotaciones() {
     agarre := ElementoBarraAnotacion(g, "···", 8, 4, 96, 24, 0, "0F0F0F", "909090", 20)
     AnotArrastre[agarre.Hwnd] := true
     for i, herramienta in [["Trazo", "trazo"], ["Flecha", "flecha"], ["Óvalo", "ovalo"], ["Marco", "marco"], ["Línea", "linea"], ["Texto", "texto"]]
-        AnotBotones[herramienta[2]] := ElementoBarraAnotacion(g, herramienta[1], 8, 34 + (i - 1) * 34, 96, 30, ElegirHerramientaAnotacion.Bind(herramienta[2]))
+        AnotBotones[herramienta[2]] := ElementoBarraAnotacion(g, herramienta[1], 8, 34 + (i - 1) * 34, 96, 30, ElegirHerramientaAnotacion.Bind(herramienta[2]), "232323", "D6D6D6", 12, herramienta[2])
     for i, color in ["FF334D", "FFC857", "71DCA7", "8AB4F8", "C5A5F5", "F1F1F1"]
         AnotColores[color] := ElementoBarraAnotacion(g, "", 12 + Mod(i - 1, 3) * 32, 246 + ((i - 1) // 3) * 30, 24, 24, ElegirColorAnotacion.Bind(color), color, "181818")
     AnotGrosorEtiqueta := ElementoBarraAnotacion(g, "Grosor", 8, 312, 96, 18, 0, "0F0F0F", "909090", 11)
@@ -4837,13 +4839,73 @@ CrearBarraAnotaciones() {
     ReordenarCapasMostrador()
 }
 
-ElementoBarraAnotacion(g, texto, x, y, w, h, accion := 0, fondo := "232323", tinta := "D6D6D6", px := 12) {
+PintarIconoHerramientaBarra(d, w, h) {
+    global AnotHerramienta
+    anterior := A_IsCritical
+    Critical "On"
+    try {
+        activa := d.figura = AnotHerramienta
+        clave := w "|" h "|" activa
+        if d.imagenClave = clave
+            return
+        bmp := DibujarHerramientaBarra(d.figura, d.texto, w, h, activa)
+        PonerImagenModerna(d.control, bmp)
+        d.imagenClave := clave
+    } finally {
+        Critical anterior
+    }
+}
+
+DibujarHerramientaBarra(figura, texto, w, h, activa) {
+    muestra := 3
+    superficie := RelojCrearSuperficie(w * muestra, h * muestra)
+    try {
+        s := Min(w / 96, h / 30) * muestra
+        fondo := activa ? "45232B" : "232323"
+        tinta := activa ? "FF96A8" : "D6D6D6"
+        RelojFondo(superficie.dc, superficie.w, superficie.h, "0F0F0F")
+        RectTecla(superficie.dc, 0, 0, superficie.w, superficie.h, Round(10 * s), fondo)
+        cx := 19 * s, cy := superficie.h / 2
+        puntos := []
+        switch figura {
+            case "trazo":
+                Loop 25 {
+                    x := -8 + (A_Index - 1) * 16 / 24
+                    puntos.Push([cx + x * s, cy + Sin(x * 0.55) * 3.5 * s])
+                }
+            case "flecha":
+                puntos := [[cx - 7 * s, cy + 5 * s], [cx + 7 * s, cy - 5 * s]]
+                RelojTrazo(superficie.dc, [[cx, cy - 5 * s], [cx + 7 * s, cy - 5 * s], [cx + 7 * s, cy + 2 * s]], 1.5 * s, tinta, true)
+            case "ovalo":
+                Loop 49 {
+                    angulo := (A_Index - 1) * 6.283185307179586 / 48
+                    puntos.Push([cx + Cos(angulo) * 8 * s, cy + Sin(angulo) * 6 * s])
+                }
+            case "marco":
+                puntos := [[cx - 8 * s, cy - 6 * s], [cx + 8 * s, cy - 6 * s],
+                    [cx + 8 * s, cy + 6 * s], [cx - 8 * s, cy + 6 * s], [cx - 8 * s, cy - 6 * s]]
+            case "linea":
+                puntos := [[cx - 7 * s, cy + 5 * s], [cx + 7 * s, cy - 5 * s]]
+            case "texto":
+                RelojTexto(superficie.dc, "Aa", cx - 11 * s, 0, 22 * s, superficie.h, 13 * s, tinta, true)
+        }
+        if puntos.Length
+            RelojTrazo(superficie.dc, puntos, 1.5 * s, tinta, true)
+        RelojTexto(superficie.dc, texto, 34 * s, 0, superficie.w - 38 * s, superficie.h, 12 * s, tinta)
+        return RelojReducirSuperficie(superficie, w, h)
+    } finally {
+        RelojLiberarSuperficie(superficie)
+    }
+}
+
+ElementoBarraAnotacion(g, texto, x, y, w, h, accion := 0, fondo := "232323", tinta := "D6D6D6", px := 12, figura := "") {
     global AnotBarraElementos
     g.SetFont("s" Pt(px) " c" tinta, "Segoe UI")
-    control := g.AddText(Format("x{} y{} w{} h{} Center +0x200 +0x100 Background{}", x, y, w, h, fondo), texto)
+    estilo := figura = "" ? " Center +0x200 +0x100 Background" fondo : " +0xE +0x100"
+    control := g.AddText(Format("x{} y{} w{} h{}", x, y, w, h) estilo, figura = "" ? texto : "")
     if IsObject(accion)
         control.OnEvent("Click", accion)
-    AnotBarraElementos.Push({control: control, x: x, y: y, w: w, h: h, px: px})
+    AnotBarraElementos.Push({control: control, x: x, y: y, w: w, h: h, px: px, figura: figura, texto: texto, imagenClave: ""})
     return control
 }
 
@@ -4858,7 +4920,10 @@ AjustarBarraAnotaciones(g, minmax, ancho, alto) {
         for d in AnotBarraElementos {
             w := Max(1, Round(d.w * sx)), h := Max(1, Round(d.h * sy))
             d.control.Move(Round(d.x * sx), Round(d.y * sy), w, h)
-            d.control.SetFont("s" Pt(d.px * Min(sx, sy)))
+            if d.figura != ""
+                PintarIconoHerramientaBarra(d, w, h)
+            else
+                d.control.SetFont("s" Pt(d.px * Min(sx, sy)))
             RedondearNota(d.control, w, h, Max(4, Round(10 * Min(sx, sy))))
         }
         if AnotModoActivoBarra()
@@ -4922,14 +4987,16 @@ CambiarGrosorAnotacion(delta, *) {
 }
 
 ActualizarPaletaAnotaciones() {
+    global AnotBarraElementos
     global AnotBotones, AnotColores, AnotHerramienta, AnotColor, AnotEstado, AnotDuracion, AnotGrosor
     global AnotPausa, AnotPausaBoton
     global AnotGrosorTexto, AnotDeshacerBoton, AnotRehacerBoton, AnotBorrarBoton
     global AnotHistorial, AnotRehacer, AnotActual, AnotTrazos, AnotTextoTam, AnotGrosorEtiqueta, AnotArrastreTexto
-    for clave, boton in AnotBotones {
-        boton.Opt("Background" (clave = AnotHerramienta ? "45232B" : "232323"))
-        boton.SetFont("c" (clave = AnotHerramienta ? "FF96A8" : "D6D6D6"))
-        DllCall("InvalidateRect", "ptr", boton.Hwnd, "ptr", 0, "int", true)
+    for d in AnotBarraElementos {
+        if d.figura != "" {
+            d.control.GetPos(, , &w, &h)
+            PintarIconoHerramientaBarra(d, w, h)
+        }
     }
     for color, boton in AnotColores
         boton.Text := color = AnotColor ? "✓" : ""
@@ -5290,9 +5357,12 @@ CerrarAnotaciones(*) {
         AnotBarraElementos := []
         AnotModo := false, AnotPausa := false, AnotPausaBoton := 0
         AnotHwndCaptura := 0, AnotActual := 0, AnotTrazos := [], AnotPendiente := false
-        for ventana in [AnotBarra, AnotCaptura, AnotLienzo]
-            if ventana is Gui
+        for ventana in [AnotBarra, AnotCaptura, AnotLienzo] {
+            if ventana is Gui {
+                LiberarImagenesModernas(ventana)
                 ventana.Destroy()
+            }
+        }
         AnotBarra := 0, AnotCaptura := 0, AnotLienzo := 0, AnotPic := 0, AnotBotones := Map()
         AnotHistorial := [], AnotRehacer := [], AnotColores := Map(), AnotArrastre := Map()
         AnotEstado := 0, AnotGrosorTexto := 0, AnotDeshacerBoton := 0, AnotRehacerBoton := 0, AnotBorrarBoton := 0, AnotGrosorEtiqueta := 0
