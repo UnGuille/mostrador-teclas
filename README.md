@@ -319,7 +319,10 @@ herramientas, colores y acciones en una **barra vertical compacta**, centrada en
 el lateral derecho de la pantalla donde estás trabajando la primera vez.
 
 Pulsa **−** en la esquina superior derecha de la barra para plegarla en un
-pequeño control flotante. Pulsa **+** para desplegarla con el tamaño anterior.
+pequeño control flotante. Al plegarse se acerca al borde izquierdo o derecho
+más cercano y conserva su altura, salvo el ajuste necesario para que siga visible.
+Pulsa **+** para desplegarla con el tamaño anterior. Los iconos y controles se
+repintan con las dimensiones finales para evitar recortes después del plegado.
 Los dibujos, el historial y la herramienta elegida se conservan; plegar sólo
 reduce el menú, y el modo de dibujo o escritorio sigue como lo dejaste.
 También puedes mover el control plegado desde su agarre **···**. Al desplegarlo,

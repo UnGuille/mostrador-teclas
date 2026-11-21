@@ -144,7 +144,7 @@ global AnotInterfazHwnds := Map(), AnotInterfazRects := []
 global AnotAreaClave := "", AnotAreaPendiente := false
 global AnotBarraPlegada := false, AnotBotonPlegar := 0, AnotAgarreBarra := 0
 global AnotBarraAbiertaW := 0, AnotBarraAbiertaH := 0, AnotBarraMarcoW := 0
-global AnotBarraMinW := 0, AnotBarraMinH := 0
+global AnotBarraMinW := 0, AnotBarraMinH := 0, AnotBarraCambiando := false
 global AnotBarraElementos := []
 global AnotPausa := false, AnotPausaBoton := 0
 global AnotModo := false, AnotLienzo := 0, AnotCaptura := 0, AnotBarra := 0, AnotPic := 0
@@ -4783,15 +4783,26 @@ MostrarCapturaAnotaciones() {
 
 AlternarBarraAnotacionesPlegada(*) {
     global AnotBarra, AnotBarraPlegada, AnotBarraAbiertaW, AnotBarraAbiertaH, AnotBarraMarcoW
-    global AnotBarraMinW, AnotBarraMinH, AnotBotonPlegar, CerrandoMostrador
+    global AnotBarraMinW, AnotBarraMinH, AnotBotonPlegar, CerrandoMostrador, AnotBarraCambiando, AnotBarraElementos
     if CerrandoMostrador || !(AnotBarra is Gui)
         return
     anterior := A_IsCritical
     Critical "On"
     try {
+        AnotBarraCambiando := true
         g := AnotBarra
         g.GetPos(&x, &y, &totalW)
         derecha := x + totalW
+        plegando := !AnotBarraPlegada
+        lateral := "derecho"
+        monitor := DllCall("MonitorFromWindow", "ptr", g.Hwnd, "uint", 2, "ptr")
+        trabajo := Buffer(40, 0)
+        NumPut("uint", 40, trabajo)
+        tienePantalla := DllCall("GetMonitorInfoW", "ptr", monitor, "ptr", trabajo)
+        if tienePantalla {
+            bordeL := NumGet(trabajo, 20, "int"), bordeR := NumGet(trabajo, 28, "int")
+            lateral := Abs(x - bordeL) < Abs(bordeR - derecha) ? "izquierdo" : "derecho"
+        }
         if !AnotBarraPlegada {
             g.GetClientPos(, , &AnotBarraAbiertaW, &AnotBarraAbiertaH)
             AnotBarraMarcoW := totalW - AnotBarraAbiertaW
@@ -4817,14 +4828,22 @@ AlternarBarraAnotacionesPlegada(*) {
         pos := PosicionEnPantalla(derecha - w, y, w, h)
         g.Show(Format("x{} y{} w{} h{} NoActivate", pos[1], pos[2], w, h))
         g.GetPos(, , &nuevoW, &nuevoH)
-        pos := PosicionEnPantalla(derecha - nuevoW, y, nuevoW, nuevoH)
+        destinoX := derecha - nuevoW
+        if plegando && tienePantalla
+            destinoX := lateral = "izquierdo" ? bordeL + 8 : bordeR - nuevoW - 8
+        pos := PosicionEnPantalla(destinoX, y, nuevoW, nuevoH)
         g.Move(pos[1], pos[2])
+        for d in AnotBarraElementos
+            d.imagenClave := ""
+        AnotBarraCambiando := false
         g.GetClientPos(, , &cw, &ch)
         AjustarBarraAnotaciones(g, 0, cw, ch)
+        DllCall("RedrawWindow", "ptr", g.Hwnd, "ptr", 0, "ptr", 0, "uint", 0x185)
         ActualizarAreaCapturaAnotaciones()
         ReordenarCapasMostrador()
         GuardarGeometriaBarraAnotaciones(0, 0, 0, g.Hwnd)
     } finally {
+        AnotBarraCambiando := false
         Critical anterior
     }
 }
@@ -4834,6 +4853,8 @@ AjustarControlesBarraPlegada(ancho, alto) {
     for d in AnotBarraElementos
         d.control.Visible := d.control.Hwnd = AnotBotonPlegar.Hwnd || d.control.Hwnd = AnotAgarreBarra.Hwnd
     s := Min(ancho / 44, alto / 64)
+    DllCall("SetWindowRgn", "ptr", AnotAgarreBarra.Hwnd, "ptr", 0, "int", false)
+    DllCall("SetWindowRgn", "ptr", AnotBotonPlegar.Hwnd, "ptr", 0, "int", false)
     AnotAgarreBarra.Move(0, 0, ancho, Round(22 * s))
     AnotAgarreBarra.SetFont("s" Pt(16 * s))
     AnotBotonPlegar.Move(Round(4 * s), Round(26 * s), Max(1, ancho - Round(8 * s)), Round(32 * s))
@@ -4967,7 +4988,7 @@ DibujarHerramientaBarra(figura, texto, w, h, activa) {
 ElementoBarraAnotacion(g, texto, x, y, w, h, accion := 0, fondo := "232323", tinta := "D6D6D6", px := 12, figura := "") {
     global AnotBarraElementos
     g.SetFont("s" Pt(px) " c" tinta, "Segoe UI")
-    estilo := figura = "" ? " Center +0x200 +0x100 Background" fondo : " +0xE +0x100"
+    estilo := figura = "" ? " Center +0x200 +0x100 Background" fondo : " +0xE +0x40 +0x100"
     control := g.AddText(Format("x{} y{} w{} h{}", x, y, w, h) estilo, figura = "" ? texto : "")
     if IsObject(accion)
         control.OnEvent("Click", accion)
@@ -4976,12 +4997,16 @@ ElementoBarraAnotacion(g, texto, x, y, w, h, accion := 0, fondo := "232323", tin
 }
 
 AjustarBarraAnotaciones(g, minmax, ancho, alto) {
-    global AnotBarra, AnotBarraElementos, CerrandoMostrador, AnotBarraPlegada
-    if CerrandoMostrador || minmax = -1 || !(AnotBarra is Gui) || g.Hwnd != AnotBarra.Hwnd
+    global AnotBarra, AnotBarraElementos, CerrandoMostrador, AnotBarraPlegada, AnotBarraCambiando
+    if CerrandoMostrador || AnotBarraCambiando || minmax = -1 || !(AnotBarra is Gui) || g.Hwnd != AnotBarra.Hwnd
         return
     anterior := A_IsCritical
     Critical "On"
     try {
+        ; Los Size pendientes pueden contener medidas anteriores al desplegado.
+        g.GetClientPos(, , &ancho, &alto)
+        if ancho < 1 || alto < 1
+            return
         if AnotBarraPlegada {
             AjustarControlesBarraPlegada(ancho, alto)
             if AnotModoActivoBarra()
@@ -4990,7 +5015,7 @@ AjustarBarraAnotaciones(g, minmax, ancho, alto) {
         }
         sx := ancho / 112, sy := alto / 608
         for d in AnotBarraElementos {
-            d.control.Visible := true
+            DllCall("SetWindowRgn", "ptr", d.control.Hwnd, "ptr", 0, "int", false)
             w := Max(1, Round(d.w * sx)), h := Max(1, Round(d.h * sy))
             d.control.Move(Round(d.x * sx), Round(d.y * sy), w, h)
             if d.figura != ""
@@ -4998,6 +5023,8 @@ AjustarBarraAnotaciones(g, minmax, ancho, alto) {
             else
                 d.control.SetFont("s" Pt(d.px * Min(sx, sy)))
             RedondearNota(d.control, w, h, Max(4, Round(10 * Min(sx, sy))))
+            d.control.Visible := true
+            DllCall("InvalidateRect", "ptr", d.control.Hwnd, "ptr", 0, "int", true)
         }
         if AnotModoActivoBarra()
             ActualizarAreaCapturaAnotaciones()
