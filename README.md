@@ -318,6 +318,14 @@ Pulsa el **botón azul de dibujo** junto a las notas, ⚙ y minimizar, o usa
 herramientas, colores y acciones en una **barra vertical compacta**, centrada en
 el lateral derecho de la pantalla donde estás trabajando la primera vez.
 
+Pulsa **−** en la esquina superior derecha de la barra para plegarla en un
+pequeño control flotante. Pulsa **+** para desplegarla con el tamaño anterior.
+Los dibujos, el historial y la herramienta elegida se conservan; plegar sólo
+reduce el menú, y el modo de dibujo o escritorio sigue como lo dejaste.
+También puedes mover el control plegado desde su agarre **···**. Al desplegarlo,
+la barra se ajusta a la pantalla disponible. El estado plegado dura esa sesión;
+una nueva sesión de anotaciones comienza con la barra desplegada.
+
 Arrastra el agarre **···** de arriba o cualquier espacio vacío para moverla.
 Arrastra sus bordes o esquinas para cambiar su tamaño: los botones y las letras
 se adaptan al espacio. La posición y el tamaño se guardan en `[Anotaciones]`
