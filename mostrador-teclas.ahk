@@ -91,7 +91,7 @@ global overlay := 0, txtCombo := 0, txtPrev := 0, U := 40, GuiW := 0, GuiH := 0
 global ih := 0, Recursos := [], Fuentes := Map()
 global Redimension := 0, HwndTeclado := 0, CerrandoMostrador := false
 global TeclasMinActivas := Integer(IniRead(ArchivoConfig, "Teclado", "TeclasMinimizadas", "0")) != 0
-global BotonTeclasMin := 0, TeclasMinPic := 0, TeclasMinBitmap := 0, HistorialMin := []
+global TeclasMinPic := 0, TeclasMinBitmap := 0, HistorialMin := []
 global PanelTeclasMin := 0, TeclasMinClave := "010203"
 global TeclasMinEscala := Max(0.5, Min(2.5, Float(IniRead(ArchivoConfig, "Teclado", "MiniEscala", "1"))))
 global TeclasMinX := IniRead(ArchivoConfig, "Teclado", "MiniX", "")
@@ -3254,7 +3254,7 @@ AnchoControlesMostrador() {
 
 CrearControlMinimizar() {
     global ControlMinimizar, BotonMinimizar, BotonAjustes, BotonNotas, BotonAnotaciones, BotonClase
-    global BotonTrazoMin, BotonTeclasMin
+    global BotonTrazoMin
     ; Una ventana independiente permite pulsarlo incluso con el teclado bloqueado.
     ControlMinimizar := Gui("+AlwaysOnTop -Caption +ToolWindow -DPIScale +E0x08000000", "Minimizar mostrador")
     ControlMinimizar.MarginX := 0, ControlMinimizar.MarginY := 0
@@ -3275,8 +3275,6 @@ CrearControlMinimizar() {
     BotonTrazoMin := ControlMinimizar.AddText("x0 y0 w26 h20 Center +0x200 +0x100 Hidden", "▴")
     BotonTrazoMin.SetFont("c8AB4F8", "Segoe UI Symbol")
     BotonTrazoMin.OnEvent("Click", AlternarTrazoMinimizado)
-    BotonTeclasMin := ControlMinimizar.AddText("x0 y0 w38 h38 Center +0x200 +0x100 Hidden", "○")
-    BotonTeclasMin.OnEvent("Click", AlternarTeclasMinimizadas)
     ControlMinimizar.OnEvent("ContextMenu", AbrirMenuAjustes)
     ControlMinimizar.OnEvent("Close", (*) => AlternarMinimizado())
 }
@@ -3295,7 +3293,7 @@ ActualizarControlMinimizar() {
         return
     global ControlMinimizar, BotonMinimizar, BotonAjustes, BotonNotas, BotonAnotaciones, BotonClase, Minimizado, Visible, overlay, U
     global IconoMinX, IconoMinY, MostrarTeclado, MostrarHistorial, BotonClaseTam, UIImagenesModernas, BotonTrazoMin
-    global BotonTeclasMin, TeclasMinActivas
+    global TeclasMinActivas
     if !IsObject(ControlMinimizar)
         return
     if (!Minimizado && !Visible) {
@@ -3305,12 +3303,12 @@ ActualizarControlMinimizar() {
     if Minimizado {
         tam := Max(30, Round(38 * A_ScreenDPI / 96))
         discreto := Max(12, Round(14 * A_ScreenDPI / 96))
-        ancho := tam + discreto, separacion := 0
+        ancho := tam, separacion := 0
         altoFlecha := Max(6, Round(8 * A_ScreenDPI / 96))
         alto := tam + altoFlecha
-        x := IconoMinX - discreto, y := IconoMinY - altoFlecha
+        x := IconoMinX, y := IconoMinY - altoFlecha
         BotonMinimizar.Text := "⌨"
-        ControlMinimizar.Title := "Expandir teclado (Ctrl+Alt+N)"
+        ControlMinimizar.Title := "Clic: expandir · Shift + clic: mini teclas"
     } else {
         overlay.GetPos(&ox, &oy, &ow, &oh)
         tam := TamBotonMinimizar()
@@ -3331,21 +3329,13 @@ ActualizarControlMinimizar() {
         x := Max(NumGet(info, 20, "int"), Min(x, NumGet(info, 28, "int") - ancho))
         y := Max(NumGet(info, 24, "int"), Min(y, NumGet(info, 32, "int") - alto))
     }
-    IconoMinX := Minimizado ? x + discreto : x + 4 * (tam + separacion)
+    IconoMinX := Minimizado ? x : x + 4 * (tam + separacion)
     IconoMinY := y + altoFlecha
-    BotonTeclasMin.Visible := Minimizado
     BotonTrazoMin.Visible := Minimizado
     if Minimizado {
         ControlMinimizar.BackColor := "272727"
         WinSetTransColor("Off", ControlMinimizar)
-        BotonTrazoMin.Move(discreto + Round((tam - discreto) / 2), 0, discreto, discreto)
-        BotonTeclasMin.Move(0, altoFlecha + Round((tam - discreto) / 2), discreto, discreto)
-        BotonTeclasMin.Text := ""
-        BotonTeclasMin.Opt("Background" (TeclasMinActivas ? "71DCA7" : "666666"))
-        region := DllCall("CreateEllipticRgn", "int", 2, "int", 2, "int", discreto - 2, "int", discreto - 2, "ptr")
-        if !DllCall("SetWindowRgn", "ptr", BotonTeclasMin.Hwnd, "ptr", region, "int", true)
-            DllCall("DeleteObject", "ptr", region)
-        BotonTeclasMin.SetFont("s" Pt(10 * A_ScreenDPI / 96) (TeclasMinActivas ? " c71DCA7" : " c888888"), "Segoe UI Symbol")
+        BotonTrazoMin.Move(Round((tam - discreto) / 2), 0, discreto, discreto)
         BotonTrazoMin.SetFont("s" Pt(9 * A_ScreenDPI / 96) " c888888", "Segoe UI Symbol")
         ActualizarFlechaTrazoMinimizado()
     }
@@ -3368,8 +3358,8 @@ ActualizarControlMinimizar() {
         BotonAjustes.Move(3 * (tam + separacion), 0, tam, tam)
         BotonAjustes.SetFont("s" Pt(tam * 0.65) " cF1F1F1", "Segoe UI Symbol")
     }
-    BotonMinimizar.Move(Minimizado ? discreto : 4 * (tam + separacion), altoFlecha, tam, tam)
-    BotonMinimizar.SetFont("s" Pt(tam * 0.65) " cF1F1F1", "Segoe UI Symbol")
+    BotonMinimizar.Move(Minimizado ? 0 : 4 * (tam + separacion), altoFlecha, tam, tam)
+    BotonMinimizar.SetFont("s" Pt(tam * 0.65) (Minimizado && TeclasMinActivas ? " c71DCA7" : " cF1F1F1"), "Segoe UI Symbol")
     MostrarCapaMostrador(ControlMinimizar, x, y, ancho, alto)
     ActualizarPanelMiniTeclas()
 }
@@ -3380,6 +3370,13 @@ ClickIconoMostrador(*) {
         AlternarMinimizado()
 }
 
+AccionClickIconoMin(conShift) {
+    if conShift
+        AlternarTeclasMinimizadas()
+    else
+        AlternarMinimizado()
+}
+
 PresionarIconoMin(wParam, lParam, msg, hwnd) {
     global Minimizado, BotonMinimizar, ControlMinimizar, ArrastreIconoMin
     if !Minimizado || hwnd != BotonMinimizar.Hwnd
@@ -3387,7 +3384,7 @@ PresionarIconoMin(wParam, lParam, msg, hwnd) {
     punto := Buffer(8, 0)
     DllCall("GetCursorPos", "ptr", punto)
     ControlMinimizar.GetPos(&x, &y)
-    ArrastreIconoMin := {mx: NumGet(punto, 0, "int"), my: NumGet(punto, 4, "int"), x: x, y: y, movido: false}
+    ArrastreIconoMin := {mx: NumGet(punto, 0, "int"), my: NumGet(punto, 4, "int"), x: x, y: y, movido: false, shift: (wParam & 4) != 0 || GetKeyState("Shift", "P")}
     SetTimer(MoverIconoMin, 10)
     return 0
 }
@@ -3406,7 +3403,7 @@ MoverIconoMin() {
         if a.movido
             AnclarIconoMin()
         else
-            AlternarMinimizado()
+            AccionClickIconoMin(a.shift)
         return
     }
     punto := Buffer(8, 0)
@@ -3434,7 +3431,7 @@ AnclarIconoMin() {
             x := r - w - 4
         x := Max(l, Min(x, r - w)), y := Max(t, Min(y, b - h))
     }
-    IconoMinX := x + Max(12, Round(14 * A_ScreenDPI / 96))
+    IconoMinX := x
     IconoMinY := y + Max(6, Round(8 * A_ScreenDPI / 96))
     IconoGuardadoX := IconoMinX, IconoGuardadoY := IconoMinY
     IniWrite(IconoGuardadoX, ArchivoConfig, "Teclado", "IconoMinX")
