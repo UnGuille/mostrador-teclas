@@ -92,6 +92,10 @@ global ih := 0, Recursos := [], Fuentes := Map()
 global Redimension := 0, HwndTeclado := 0, CerrandoMostrador := false
 global TeclasMinActivas := Integer(IniRead(ArchivoConfig, "Teclado", "TeclasMinimizadas", "0")) != 0
 global BotonTeclasMin := 0, TeclasMinPic := 0, TeclasMinBitmap := 0, HistorialMin := []
+global PanelTeclasMin := 0, TeclasMinClave := "010203"
+global TeclasMinEscala := Max(0.5, Min(2.5, Float(IniRead(ArchivoConfig, "Teclado", "MiniEscala", "1"))))
+global TeclasMinX := IniRead(ArchivoConfig, "Teclado", "MiniX", "")
+global TeclasMinY := IniRead(ArchivoConfig, "Teclado", "MiniY", "")
 global Minimizado := false, ControlMinimizar := 0, BotonMinimizar := 0, BotonTrazoMin := 0
 global IconoMinX := 0, IconoMinY := 0, BotonAjustes := 0, BotonClase := 0
 global FrenteOrdenMostrador := [], FrenteReordenandoMostrador := false
@@ -178,6 +182,9 @@ try {
     OnMessage(0x0047, ProgramarAreaCapturaAnotaciones)
     OnMessage(0x0006, ActivacionDialogosMostrador)
     OnMessage(0x0047, CambioCapasMostrador)
+    OnMessage(0x0201, ArrastrarMiniTeclas)
+    OnMessage(0x020A, RuedaMiniTeclas)
+    OnMessage(0x0232, GuardarPosicionMiniTeclas)
     OnMessage(0x0200, HoverBotonModerno)
     OnMessage(0x0020, CursorBotonModerno)
     OnMessage(0x0201, ArrastrarPanelClase)
@@ -2623,7 +2630,11 @@ AlternarResplandorMouse() {
 
 LiberarHaloMouse(*) {
     DestruirPanelNota()
-    global ControlMinimizar, AjustesMouseGui, NotasGui, TeclasMinBitmap
+    global ControlMinimizar, AjustesMouseGui, NotasGui, TeclasMinBitmap, PanelTeclasMin
+    if PanelTeclasMin is Gui {
+        PanelTeclasMin.Destroy()
+        PanelTeclasMin := 0
+    }
     if TeclasMinBitmap {
         DllCall("DeleteObject", "ptr", TeclasMinBitmap)
         TeclasMinBitmap := 0
@@ -3090,7 +3101,7 @@ PintarGrupoHistorial(dc, grupo, x, y, maxW, alto, px) {
 }
 
 DibujarHistorial(w, h, vertical := false, entradas := unset, compacto := false) {
-    global Historial, U, AvisoActual
+    global Historial, U, AvisoActual, TeclasMinClave
     if !IsSet(entradas)
         entradas := Historial
     pantalla := DllCall("GetDC", "ptr", 0, "ptr")
@@ -3100,17 +3111,19 @@ DibujarHistorial(w, h, vertical := false, entradas := unset, compacto := false) 
     old := DllCall("SelectObject", "ptr", dc, "ptr", bmp, "ptr")
     rc := Buffer(16, 0)
     NumPut("int", w, rc, 8), NumPut("int", h, rc, 12)
-    br := DllCall("CreateSolidBrush", "uint", BGR("0F0F0F"), "ptr")
+    br := DllCall("CreateSolidBrush", "uint", BGR(compacto ? TeclasMinClave : "0F0F0F"), "ptr")
     DllCall("FillRect", "ptr", dc, "ptr", rc, "ptr", br)
     DllCall("DeleteObject", "ptr", br)
-    RectTecla(dc, 0, 0, w, h, Round(U * 0.2), "373737")
-    RectTecla(dc, 1, 1, w - 1, h - 1, Round(U * 0.2), "181818")
+    if !compacto {
+        RectTecla(dc, 0, 0, w, h, Round(U * 0.2), "373737")
+        RectTecla(dc, 1, 1, w - 1, h - 1, Round(U * 0.2), "181818")
+    }
     pad := Max(4, Round(U * 0.18))
     cab := Round(U * 0.42), alto := Round(U * 0.62)
     px := Max(9, Round(U * 0.27))
     if compacto {
         cab := 3, alto := h - 6
-        px := Max(10, Round(14 * A_ScreenDPI / 96))
+        px := Max(8, Round(h * 0.38))
     }
     etiqueta := "RECIENTES  ·  hasta 4 teclas →"
     if !compacto
@@ -3237,7 +3250,7 @@ AnchoControlesMostrador() {
 
 CrearControlMinimizar() {
     global ControlMinimizar, BotonMinimizar, BotonAjustes, BotonNotas, BotonAnotaciones, BotonClase
-    global BotonTrazoMin, BotonTeclasMin, TeclasMinPic
+    global BotonTrazoMin, BotonTeclasMin
     ; Una ventana independiente permite pulsarlo incluso con el teclado bloqueado.
     ControlMinimizar := Gui("+AlwaysOnTop -Caption +ToolWindow -DPIScale +E0x08000000", "Minimizar mostrador")
     ControlMinimizar.MarginX := 0, ControlMinimizar.MarginY := 0
@@ -3258,9 +3271,8 @@ CrearControlMinimizar() {
     BotonTrazoMin := ControlMinimizar.AddText("x0 y0 w26 h20 Center +0x200 +0x100 Hidden", "▴")
     BotonTrazoMin.SetFont("c8AB4F8", "Segoe UI Symbol")
     BotonTrazoMin.OnEvent("Click", AlternarTrazoMinimizado)
-    BotonTeclasMin := ControlMinimizar.AddText("x0 y0 w38 h38 Center +0x200 +0x100 Hidden", "T ○")
+    BotonTeclasMin := ControlMinimizar.AddText("x0 y0 w38 h38 Center +0x200 +0x100 Hidden", "○")
     BotonTeclasMin.OnEvent("Click", AlternarTeclasMinimizadas)
-    TeclasMinPic := ControlMinimizar.AddText("x0 y0 w1 h1 +0xE Hidden")
     ControlMinimizar.OnEvent("ContextMenu", AbrirMenuAjustes)
     ControlMinimizar.OnEvent("Close", (*) => AlternarMinimizado())
 }
@@ -3279,7 +3291,7 @@ ActualizarControlMinimizar() {
         return
     global ControlMinimizar, BotonMinimizar, BotonAjustes, BotonNotas, BotonAnotaciones, BotonClase, Minimizado, Visible, overlay, U
     global IconoMinX, IconoMinY, MostrarTeclado, MostrarHistorial, BotonClaseTam, UIImagenesModernas, BotonTrazoMin
-    global BotonTeclasMin, TeclasMinPic, TeclasMinActivas, HistorialMin
+    global BotonTeclasMin, TeclasMinActivas
     if !IsObject(ControlMinimizar)
         return
     if (!Minimizado && !Visible) {
@@ -3288,17 +3300,17 @@ ActualizarControlMinimizar() {
     }
     if Minimizado {
         tam := Max(30, Round(38 * A_ScreenDPI / 96))
-        anchoTeclas := TeclasMinActivas && HistorialMin.Length ? Round(420 * A_ScreenDPI / 96) : 0
-        ancho := 2 * tam + anchoTeclas, separacion := 0
-        altoFlecha := Max(18, Round(22 * A_ScreenDPI / 96))
+        discreto := Max(12, Round(14 * A_ScreenDPI / 96))
+        ancho := tam + discreto, separacion := 0
+        altoFlecha := discreto
         alto := tam + altoFlecha
-        x := IconoMinX - anchoTeclas, y := IconoMinY - altoFlecha
+        x := IconoMinX, y := IconoMinY - altoFlecha
         BotonMinimizar.Text := "⌨"
         ControlMinimizar.Title := "Expandir teclado (Ctrl+Alt+N)"
     } else {
         overlay.GetPos(&ox, &oy, &ow, &oh)
         tam := TamBotonMinimizar()
-        altoFlecha := 0, alto := tam, anchoTeclas := 0
+        altoFlecha := 0, alto := tam
         pad := Round(U * 0.3)
         margenY := MostrarTeclado ? pad : Round(pad * 0.6)
         separacion := Max(2, Round(U * 0.1))
@@ -3312,29 +3324,21 @@ ActualizarControlMinimizar() {
     info := Buffer(40, 0)
     NumPut("uint", 40, info)
     if DllCall("GetMonitorInfoW", "ptr", monitor, "ptr", info) {
-        if Minimizado {
-            anchoTeclas := Min(anchoTeclas, Max(0, NumGet(info, 28, "int") - NumGet(info, 20, "int") - 2 * tam))
-            ancho := 2 * tam + anchoTeclas
-            x := IconoMinX - anchoTeclas
-        }
         x := Max(NumGet(info, 20, "int"), Min(x, NumGet(info, 28, "int") - ancho))
         y := Max(NumGet(info, 24, "int"), Min(y, NumGet(info, 32, "int") - alto))
     }
-    IconoMinX := Minimizado ? x + anchoTeclas : x + 4 * (tam + separacion)
+    IconoMinX := Minimizado ? x : x + 4 * (tam + separacion)
     IconoMinY := y + altoFlecha
     BotonTeclasMin.Visible := Minimizado
-    TeclasMinPic.Visible := Minimizado && anchoTeclas > 0
     BotonTrazoMin.Visible := Minimizado
     if Minimizado {
-        BotonTrazoMin.Move(anchoTeclas, 0, tam, altoFlecha)
-        BotonTeclasMin.Move(anchoTeclas + tam, altoFlecha, tam, tam)
-        BotonTeclasMin.Text := TeclasMinActivas ? "T ●" : "T ○"
-        BotonTeclasMin.SetFont("s" Pt(tam * 0.32) (TeclasMinActivas ? " c71DCA7" : " cAAAAAA"), "Segoe UI Symbol")
-        if anchoTeclas > 0 {
-            TeclasMinPic.Move(0, altoFlecha, anchoTeclas - 4, tam)
-            PintarTeclasMinimizadas(anchoTeclas - 4, tam)
-        }
-        BotonTrazoMin.SetFont("s" Pt(altoFlecha * 0.8) " c8AB4F8", "Segoe UI Symbol")
+        ControlMinimizar.BackColor := "010203"
+        WinSetTransColor("010203", ControlMinimizar)
+        BotonTrazoMin.Move(Round((tam - discreto) / 2), 0, discreto, discreto)
+        BotonTeclasMin.Move(tam, altoFlecha + Round((tam - discreto) / 2), discreto, discreto)
+        BotonTeclasMin.Text := TeclasMinActivas ? "●" : "○"
+        BotonTeclasMin.SetFont("s" Pt(10 * A_ScreenDPI / 96) (TeclasMinActivas ? " c71DCA7" : " c888888"), "Segoe UI Symbol")
+        BotonTrazoMin.SetFont("s" Pt(9 * A_ScreenDPI / 96) " c888888", "Segoe UI Symbol")
         ActualizarFlechaTrazoMinimizado()
     }
     BotonClase.Visible := !Minimizado
@@ -3342,6 +3346,8 @@ ActualizarControlMinimizar() {
     BotonNotas.Visible := !Minimizado
     BotonAjustes.Visible := !Minimizado
     if !Minimizado {
+        WinSetTransColor("Off", ControlMinimizar)
+        ControlMinimizar.BackColor := "272727"
         BotonNotas.Move(0, 0, tam, tam)
         BotonNotas.SetFont("s" Pt(tam * 0.65) " cFF6B7D", "Segoe UI Symbol")
         BotonAnotaciones.Move(tam + separacion, 0, tam, tam)
@@ -3354,9 +3360,10 @@ ActualizarControlMinimizar() {
         BotonAjustes.Move(3 * (tam + separacion), 0, tam, tam)
         BotonAjustes.SetFont("s" Pt(tam * 0.65) " cF1F1F1", "Segoe UI Symbol")
     }
-    BotonMinimizar.Move(Minimizado ? anchoTeclas : 4 * (tam + separacion), altoFlecha, tam, tam)
+    BotonMinimizar.Move(Minimizado ? 0 : 4 * (tam + separacion), altoFlecha, tam, tam)
     BotonMinimizar.SetFont("s" Pt(tam * 0.65) " cF1F1F1", "Segoe UI Symbol")
     MostrarCapaMostrador(ControlMinimizar, x, y, ancho, alto)
+    ActualizarPanelMiniTeclas()
 }
 
 ; El interruptor sólo controla las mini teclas del modo minimizado.
@@ -3391,6 +3398,35 @@ QuitarCtrlFantasmaMinimizado() {
         HistorialMin.Pop()
 }
 
+; Ventana independiente: arrastrar las teclas para mover, rueda para cambiar tamaño.
+ActualizarPanelMiniTeclas() {
+    global PanelTeclasMin, TeclasMinPic, TeclasMinActivas, Minimizado, HistorialMin
+    global TeclasMinEscala, TeclasMinX, TeclasMinY, TeclasMinClave, IconoMinX, IconoMinY
+    if !Minimizado || !TeclasMinActivas || !HistorialMin.Length {
+        if PanelTeclasMin is Gui
+            PanelTeclasMin.Hide()
+        return
+    }
+    if !(PanelTeclasMin is Gui) {
+        PanelTeclasMin := Gui("+AlwaysOnTop -Caption +ToolWindow -DPIScale +E0x08000000", "Mini teclas")
+        PanelTeclasMin.MarginX := 0, PanelTeclasMin.MarginY := 0
+        PanelTeclasMin.BackColor := TeclasMinClave
+        TeclasMinPic := PanelTeclasMin.AddText("x0 y0 w1 h1 +0xE +0x100")
+        PanelTeclasMin.OnEvent("ContextMenu", MenuMiniTeclas)
+        WinSetTransColor(TeclasMinClave, PanelTeclasMin)
+    }
+    dpi := A_ScreenDPI / 96
+    w := Round(340 * dpi * TeclasMinEscala), h := Round(40 * dpi * TeclasMinEscala)
+    x := IsNumber(TeclasMinX) ? Number(TeclasMinX) : IconoMinX - w - Round(40 * dpi)
+    y := IsNumber(TeclasMinY) ? Number(TeclasMinY) : IconoMinY - Round(90 * dpi)
+    pos := PosicionEnPantalla(x, y, w, h)
+    TeclasMinX := pos[1], TeclasMinY := pos[2]
+    TeclasMinPic.Move(0, 0, w, h)
+    PintarTeclasMinimizadas(w, h)
+    MostrarCapaMostrador(PanelTeclasMin, pos[1], pos[2], w, h)
+    ActualizarAreaCapturaAnotaciones()
+}
+
 PintarTeclasMinimizadas(w, h) {
     global HistorialMin, TeclasMinPic, TeclasMinBitmap
     nuevo := DibujarHistorial(w, h, false, HistorialMin, true)
@@ -3399,6 +3435,54 @@ PintarTeclasMinimizadas(w, h) {
     TeclasMinBitmap := nuevo
     if anterior
         DllCall("DeleteObject", "ptr", anterior)
+}
+
+ArrastrarMiniTeclas(wParam, lParam, msg, hwnd) {
+    global PanelTeclasMin, TeclasMinPic
+    if !(PanelTeclasMin is Gui) || hwnd != TeclasMinPic.Hwnd
+        return
+    DllCall("ReleaseCapture")
+    PostMessage(0x00A1, 2, 0, PanelTeclasMin) ; HTCAPTION: arrastre nativo.
+    return 0
+}
+
+RuedaMiniTeclas(wParam, lParam, msg, hwnd) {
+    global PanelTeclasMin, TeclasMinPic
+    if !(PanelTeclasMin is Gui) || (hwnd != PanelTeclasMin.Hwnd && hwnd != TeclasMinPic.Hwnd)
+        return
+    delta := (wParam >> 16) & 0xFFFF
+    CambiarTamMiniTeclas(delta & 0x8000 ? -0.1 : 0.1)
+    return 0
+}
+
+CambiarTamMiniTeclas(delta, *) {
+    global TeclasMinEscala
+    TeclasMinEscala := Round(Max(0.5, Min(2.5, TeclasMinEscala + delta)), 2)
+    ActualizarPanelMiniTeclas()
+    GuardarPosicionMiniTeclas(0, 0, 0, HwndMiniTeclas())
+}
+
+HwndMiniTeclas() {
+    global PanelTeclasMin
+    return HwndGuiMostrador(PanelTeclasMin)
+}
+
+GuardarPosicionMiniTeclas(wParam, lParam, msg, hwnd) {
+    global PanelTeclasMin, TeclasMinX, TeclasMinY, TeclasMinEscala, ArchivoConfig
+    if !hwnd || hwnd != HwndMiniTeclas()
+        return
+    PanelTeclasMin.GetPos(&TeclasMinX, &TeclasMinY)
+    IniWrite(TeclasMinX, ArchivoConfig, "Teclado", "MiniX")
+    IniWrite(TeclasMinY, ArchivoConfig, "Teclado", "MiniY")
+    IniWrite(TeclasMinEscala, ArchivoConfig, "Teclado", "MiniEscala")
+}
+
+MenuMiniTeclas(*) {
+    menu := Menu()
+    menu.Add("Más grande (rueda arriba)", CambiarTamMiniTeclas.Bind(0.1))
+    menu.Add("Más pequeño (rueda abajo)", CambiarTamMiniTeclas.Bind(-0.1))
+    menu.Add("Ocultar mini teclas", AlternarTeclasMinimizadas)
+    menu.Show()
 }
 
 ; Acceso a la paleta sin expandir el teclado. Ocultar conserva los dibujos.
@@ -3446,6 +3530,7 @@ AlternarMinimizado() {
         ActualizarControlMinimizar()
     } else {
         ControlMinimizar.Hide()
+        ActualizarPanelMiniTeclas()
         A_TrayMenu.Uncheck("Minimizar / expandir  (Ctrl+Alt+N)")
         ; Recuperar los estados reales, incluso si se cambiaron opciones minimizado.
         for sc in Teclas
@@ -3760,6 +3845,9 @@ CerrarMostrador(*) {
     OnMessage(0x0006, ActivacionDialogosMostrador, 0)
     OnMessage(0x0047, CambioCapasMostrador, 0)
     SetTimer(ReordenarCapasMostrador, 0)
+    OnMessage(0x0201, ArrastrarMiniTeclas, 0)
+    OnMessage(0x020A, RuedaMiniTeclas, 0)
+    OnMessage(0x0232, GuardarPosicionMiniTeclas, 0)
     OnMessage(0x0200, HoverBotonModerno, 0)
     OnMessage(0x0020, CursorBotonModerno, 0)
     OnMessage(0x0201, ArrastrarPanelClase, 0)
@@ -4278,12 +4366,13 @@ VentanasDialogoMostrador() {
 }
 
 CapasMostrador() {
+    global PanelTeclasMin
     global FocoClaseGui, overlay, PanelNota, RelojClaseGui, HaloMouse, ControlMinimizar
     global AnotLienzo, AnotCaptura, AnotBarra
     ; Del fondo hacia delante. Los diálogos se ordenan al terminar.
     ; La entrada y la tinta quedan por debajo de los controles interactivos.
     return [FocoClaseGui, AnotLienzo, AnotCaptura, overlay, PanelNota, RelojClaseGui,
-        HaloMouse, ControlMinimizar, AnotBarra]
+        HaloMouse, ControlMinimizar, PanelTeclasMin, AnotBarra]
 }
 
 RecordarFrenteMostrador(hwnd) {
@@ -4764,8 +4853,9 @@ CrearLienzoAnotaciones() {
 
 ; La captura de dibujo deja libres las ventanas interactivas del mostrador.
 VentanasInterfazAnotacion() {
+    global PanelTeclasMin
     global AnotBarra, overlay, ControlMinimizar, PanelNota, RelojClaseGui
-    ventanas := [AnotBarra, overlay, ControlMinimizar, PanelNota, RelojClaseGui]
+    ventanas := [AnotBarra, overlay, ControlMinimizar, PanelTeclasMin, PanelNota, RelojClaseGui]
     for g in VentanasDialogoMostrador()
         ventanas.Push(g)
     return ventanas
