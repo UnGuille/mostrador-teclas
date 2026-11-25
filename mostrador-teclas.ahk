@@ -90,7 +90,7 @@ global Teclas := Map(), Leyendas := Map(), Especiales := Map(), Posiciones := []
 global overlay := 0, txtCombo := 0, txtPrev := 0, U := 40, GuiW := 0, GuiH := 0
 global ih := 0, Recursos := [], Fuentes := Map()
 global Redimension := 0, HwndTeclado := 0, CerrandoMostrador := false
-global Minimizado := false, ControlMinimizar := 0, BotonMinimizar := 0
+global Minimizado := false, ControlMinimizar := 0, BotonMinimizar := 0, BotonTrazoMin := 0
 global IconoMinX := 0, IconoMinY := 0, BotonAjustes := 0, BotonClase := 0
 global FrenteOrdenMostrador := [], FrenteReordenandoMostrador := false
 global MenuMostradorGui := 0, MenuMostradorControles := []
@@ -886,6 +886,7 @@ Ocultar() {
 ; Cada 100 ms: limpia teclas "pegadas", apaga las que ya se soltaron
 ; y oculta la ventana si no hay actividad.
 Tick() {
+    ActualizarFlechaTrazoMinimizado()
     global TeclasDemostracion
     global Presionadas, Soltadas, ResaltadoMs, AutoOcultar, Bloqueado, Visible, UltimaTick, DuracionMs, NotaEditando
     RefrescarMouseVisual()
@@ -3216,6 +3217,7 @@ AnchoControlesMostrador() {
 
 CrearControlMinimizar() {
     global ControlMinimizar, BotonMinimizar, BotonAjustes, BotonNotas, BotonAnotaciones, BotonClase
+    global BotonTrazoMin
     ; Una ventana independiente permite pulsarlo incluso con el teclado bloqueado.
     ControlMinimizar := Gui("+AlwaysOnTop -Caption +ToolWindow -DPIScale +E0x08000000", "Minimizar mostrador")
     ControlMinimizar.MarginX := 0, ControlMinimizar.MarginY := 0
@@ -3233,6 +3235,9 @@ CrearControlMinimizar() {
     BotonAnotaciones.OnEvent("Click", AlternarAnotaciones)
     BotonClase := ControlMinimizar.AddText("x0 y0 w26 h26 +0xE +0x100")
     BotonClase.OnEvent("Click", AbrirPanelClase)
+    BotonTrazoMin := ControlMinimizar.AddText("x0 y0 w26 h20 Center +0x200 +0x100 Hidden", "▴")
+    BotonTrazoMin.SetFont("c8AB4F8", "Segoe UI Symbol")
+    BotonTrazoMin.OnEvent("Click", AlternarTrazoMinimizado)
     ControlMinimizar.OnEvent("ContextMenu", AbrirMenuAjustes)
     ControlMinimizar.OnEvent("Close", (*) => AlternarMinimizado())
 }
@@ -3250,7 +3255,7 @@ ActualizarControlMinimizar() {
     if !VentanaMostradorDisponible()
         return
     global ControlMinimizar, BotonMinimizar, BotonAjustes, BotonNotas, BotonAnotaciones, BotonClase, Minimizado, Visible, overlay, U
-    global IconoMinX, IconoMinY, MostrarTeclado, MostrarHistorial, BotonClaseTam, UIImagenesModernas
+    global IconoMinX, IconoMinY, MostrarTeclado, MostrarHistorial, BotonClaseTam, UIImagenesModernas, BotonTrazoMin
     if !IsObject(ControlMinimizar)
         return
     if (!Minimizado && !Visible) {
@@ -3260,12 +3265,15 @@ ActualizarControlMinimizar() {
     if Minimizado {
         tam := Max(30, Round(38 * A_ScreenDPI / 96))
         ancho := tam, separacion := 0
-        x := IconoMinX, y := IconoMinY
+        altoFlecha := Max(18, Round(22 * A_ScreenDPI / 96))
+        alto := tam + altoFlecha
+        x := IconoMinX, y := IconoMinY - altoFlecha
         BotonMinimizar.Text := "⌨"
         ControlMinimizar.Title := "Expandir teclado (Ctrl+Alt+N)"
     } else {
         overlay.GetPos(&ox, &oy, &ow, &oh)
         tam := TamBotonMinimizar()
+        altoFlecha := 0, alto := tam
         pad := Round(U * 0.3)
         margenY := MostrarTeclado ? pad : Round(pad * 0.6)
         separacion := Max(2, Round(U * 0.1))
@@ -3280,10 +3288,16 @@ ActualizarControlMinimizar() {
     NumPut("uint", 40, info)
     if DllCall("GetMonitorInfoW", "ptr", monitor, "ptr", info) {
         x := Max(NumGet(info, 20, "int"), Min(x, NumGet(info, 28, "int") - ancho))
-        y := Max(NumGet(info, 24, "int"), Min(y, NumGet(info, 32, "int") - tam))
+        y := Max(NumGet(info, 24, "int"), Min(y, NumGet(info, 32, "int") - alto))
     }
     IconoMinX := Minimizado ? x : x + 4 * (tam + separacion)
-    IconoMinY := y
+    IconoMinY := y + altoFlecha
+    BotonTrazoMin.Visible := Minimizado
+    if Minimizado {
+        BotonTrazoMin.Move(0, 0, tam, altoFlecha)
+        BotonTrazoMin.SetFont("s" Pt(altoFlecha * 0.8) " c8AB4F8", "Segoe UI Symbol")
+        ActualizarFlechaTrazoMinimizado()
+    }
     BotonClase.Visible := !Minimizado
     BotonAnotaciones.Visible := !Minimizado
     BotonNotas.Visible := !Minimizado
@@ -3301,9 +3315,40 @@ ActualizarControlMinimizar() {
         BotonAjustes.Move(3 * (tam + separacion), 0, tam, tam)
         BotonAjustes.SetFont("s" Pt(tam * 0.65) " cF1F1F1", "Segoe UI Symbol")
     }
-    BotonMinimizar.Move(Minimizado ? 0 : 4 * (tam + separacion), 0, tam, tam)
+    BotonMinimizar.Move(Minimizado ? 0 : 4 * (tam + separacion), altoFlecha, tam, tam)
     BotonMinimizar.SetFont("s" Pt(tam * 0.65) " cF1F1F1", "Segoe UI Symbol")
-    MostrarCapaMostrador(ControlMinimizar, x, y, ancho, tam)
+    MostrarCapaMostrador(ControlMinimizar, x, y, ancho, alto)
+}
+
+; Acceso a la paleta sin expandir el teclado. Ocultar conserva los dibujos.
+PaletaTrazoDesplegada() {
+    global AnotBarra, AnotBarraPlegada
+    return HwndGuiMostrador(AnotBarra, true) && !AnotBarraPlegada
+}
+
+ActualizarFlechaTrazoMinimizado() {
+    global BotonTrazoMin, Minimizado, CerrandoMostrador
+    if CerrandoMostrador || !Minimizado || !IsObject(BotonTrazoMin)
+        return
+    flecha := PaletaTrazoDesplegada() ? "▾" : "▴"
+    if BotonTrazoMin.Text != flecha
+        BotonTrazoMin.Text := flecha
+}
+
+AlternarTrazoMinimizado(*) {
+    global AnotBarra, AnotBarraPlegada, AnotTextoGui
+    if AnotTextoGui is Gui {
+        MostrarDialogoMostrador(AnotTextoGui)
+        return
+    }
+    if PaletaTrazoDesplegada() {
+        FinalizarAnotaciones()
+    } else {
+        IniciarAnotaciones()
+        if (AnotBarra is Gui) && AnotBarraPlegada
+            AlternarBarraAnotacionesPlegada()
+    }
+    ActualizarFlechaTrazoMinimizado()
 }
 
 AlternarMinimizado() {

@@ -15,6 +15,7 @@ y acentos rojos. Las teclas conservan su relieve y animación de pulsación.
 - **Distribuciones Latinoamérica y España:** los símbolos escritos con **Alt Gr** aparecen en azul.
 - **Mouse visual opcional:** cuerpo curvo, botones integrados y rueda central. Por defecto, los clics izquierdo, derecho y central se iluminan en rojo y el desplazamiento de la rueda se indica en azul; las flechas indican el sentido de desplazamiento. Ambos colores se pueden personalizar. Permite mostrar clics simultáneos.
 - **Resplandor del cursor:** halo suave con color, diámetro y opacidad personalizables (amarillo por defecto) que sigue el puntero, sin impedir los clics ni cambiar el foco de la ventana activa. Se controla por separado del mouse visual.
+- **Dibujo con el teclado minimizado:** una flechita sobre el icono del teclado permite abrir y ocultar la paleta de trazo libre sin expandir el mostrador. Ocultarla conserva los dibujos y devuelve los clics al escritorio. Si la paleta estaba plegada, la flecha vuelve a desplegarla.
 - **Posición y tamaño ajustables:** arrastra el mostrador y cambia su tamaño desde sus bordes o esquinas, manteniendo las proporciones del teclado y del mouse visual. También puedes usar los atajos de tamaño o el modo de solo texto.
 
 ## Cómo usarlo
