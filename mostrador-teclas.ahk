@@ -4173,13 +4173,13 @@ CrearNota() {
     NotaVistaContraida := NotaContraida
     dpi := A_ScreenDPI / 96
     fondo := NotaFondoTeclado ? "0F0F0F" : NotaFondo
-    g := Gui("+AlwaysOnTop -Caption +ToolWindow -DPIScale", "Nota de clase")
+    g := Gui("+AlwaysOnTop -Caption +ToolWindow -DPIScale +0x02000000", "Nota de clase")
     PanelNota := g
     g.BackColor := fondo
     g.MarginX := 0, g.MarginY := 0
     NotaBotones := []
     if NotaContraida {
-        NotaEstado := g.AddText("x0 y0 w84 h28 Center +0x200 +0x100", "NOTA")
+        NotaEstado := g.AddText("x0 y0 w84 h28 Center +0x200 +0x100 Background0F0F0F", "NOTA")
         expandir := g.AddText("x84 y0 w28 h28 +0xE +0x100")
         expandir.OnEvent("Click", ContraerNota)
         NotaControles := {pestana: NotaEstado, expandir: expandir}
@@ -4187,7 +4187,7 @@ CrearNota() {
     } else {
         g.Opt("+Resize +MinSize" Round(300*dpi) "x" Round(120*dpi))
         g.SetFont("s" Pt(12*dpi) " cAAAAAA", "Segoe UI")
-        NotaEstado := g.AddText("x8 y4 w80 h32 +0x200 +0x100", NotaEditando ? "Nota · editando" : "Nota")
+        NotaEstado := g.AddText("x8 y4 w80 h32 +0x200 +0x100 Background0F0F0F", NotaEditando ? "Nota · editando" : "Nota")
         acciones := [[NotaEditando ? "guardar" : "nota", EditarNotaDirecta],
             ["letramenos", (*) => CambiarLetraNota(-2)], ["letramas", (*) => CambiarLetraNota(2)],
             ["ajustes", (*) => AbrirNotas()], ["menos", ContraerNota], ["cerrar", OcultarNotaDirecta]]
@@ -4236,6 +4236,11 @@ AjustarNotaLibre(g, estado, w, h) {
         NotaControles.contenido.Move(pad,cab,Max(1,w-2*pad),Max(1,h-cab-pad))
     }
     RedondearNota(g,w,h,Round(12*dpi))
+    ; Repintar la cabecera completa: mover los controles no borra sus posiciones anteriores.
+    cabecera := Buffer(16,0)
+    NumPut("int",w,cabecera,8)
+    NumPut("int",NotaVistaContraida ? h : Round(40*dpi),cabecera,12)
+    DllCall("RedrawWindow","ptr",g.Hwnd,"ptr",cabecera,"ptr",0,"uint",0x0185)
 }
 
 AreaNotaLibre(wParam, lParam, msg, hwnd) {
