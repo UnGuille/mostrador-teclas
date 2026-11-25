@@ -15,7 +15,7 @@ y acentos rojos. Las teclas conservan su relieve y animación de pulsación.
 - **Distribuciones Latinoamérica y España:** los símbolos escritos con **Alt Gr** aparecen en azul.
 - **Mouse visual opcional:** cuerpo curvo, botones integrados y rueda central. Por defecto, los clics izquierdo, derecho y central se iluminan en rojo y el desplazamiento de la rueda se indica en azul; las flechas indican el sentido de desplazamiento. Ambos colores se pueden personalizar. Permite mostrar clics simultáneos.
 - **Resplandor del cursor:** halo suave con color, diámetro y opacidad personalizables (amarillo por defecto) que sigue el puntero, sin impedir los clics ni cambiar el foco de la ventana activa. Se controla por separado del mouse visual.
-- **Mini teclas opcionales al minimizar:** un pequeño círculo junto al teclado activa (verde **●**) o desactiva (**○**) hasta cuatro teclas recientes. La franja es una ventana independiente y transparente, sin fondo rectangular. Arrastra las teclas para moverla; coloca el puntero encima y gira la rueda para cambiar su tamaño. También puedes hacer clic derecho para aumentar o reducir el tamaño. Su posición, tamaño y activación se guardan. Los atajos se agrupan con `+`, los modificadores aparecen en violeta y las demás teclas en turquesa. Al apagar el círculo sólo quedan los iconos. Es independiente del historial del teclado completo y no muestra clics del mouse.
+- **Mini teclas opcionales al minimizar:** un pequeño círculo a la izquierda del teclado activa (verde **●**) o desactiva (**○**) hasta cuatro teclas recientes. La franja es una ventana independiente y transparente, sin fondo rectangular. Arrastra las teclas para moverla; coloca el puntero encima y gira la rueda para cambiar su tamaño. También puedes hacer clic derecho para aumentar o reducir el tamaño. Su posición, tamaño y activación se guardan. Los atajos se agrupan con `+`, los modificadores aparecen en violeta y las demás teclas en turquesa. Al apagar el círculo sólo quedan los iconos. Es independiente del historial del teclado completo y no muestra clics del mouse.
 - **Dibujo con el teclado minimizado:** una flechita sobre el icono del teclado permite abrir y ocultar la paleta de trazo libre sin expandir el mostrador. Ocultarla conserva los dibujos y devuelve los clics al escritorio. Si la paleta estaba plegada, la flecha vuelve a desplegarla.
 - **Posición y tamaño ajustables:** arrastra el mostrador y cambia su tamaño desde sus bordes o esquinas, manteniendo las proporciones del teclado y del mouse visual. También puedes usar los atajos de tamaño o el modo de solo texto.
 
@@ -441,3 +441,7 @@ ediciones se pueden deshacer y rehacer. Si activaste el borrado automático,
 mientras arrastras o editas un texto se pausa su caducidad y al terminar se renueva
 su duración. Con el borrado manual no hay caducidad. Fuera del modo de
 anotaciones, las marcas siguen dejando pasar los clics hacia las aplicaciones.
+
+### Icono del teclado minimizado
+
+Arrastra el icono del teclado para moverlo libremente. Al soltarlo cerca del costado izquierdo o derecho, se ajusta a ese borde. Su posición queda guardada. Un clic sin arrastrar expande el teclado. El círculo a su izquierda activa las mini teclas; la pequeña flecha encima abre u oculta la paleta de dibujo.
