@@ -3336,8 +3336,8 @@ ActualizarControlMinimizar() {
     BotonTeclasMin.Visible := Minimizado
     BotonTrazoMin.Visible := Minimizado
     if Minimizado {
-        ControlMinimizar.BackColor := "010203"
-        WinSetTransColor("010203", ControlMinimizar)
+        ControlMinimizar.BackColor := "272727"
+        WinSetTransColor("Off", ControlMinimizar)
         BotonTrazoMin.Move(discreto + Round((tam - discreto) / 2), 0, discreto, discreto)
         BotonTeclasMin.Move(0, altoFlecha + Round((tam - discreto) / 2), discreto, discreto)
         BotonTeclasMin.Text := ""
