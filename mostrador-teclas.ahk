@@ -90,6 +90,8 @@ global Teclas := Map(), Leyendas := Map(), Especiales := Map(), Posiciones := []
 global overlay := 0, txtCombo := 0, txtPrev := 0, U := 40, GuiW := 0, GuiH := 0
 global ih := 0, Recursos := [], Fuentes := Map()
 global Redimension := 0, HwndTeclado := 0, CerrandoMostrador := false
+global TeclasMinActivas := Integer(IniRead(ArchivoConfig, "Teclado", "TeclasMinimizadas", "0")) != 0
+global BotonTeclasMin := 0, TeclasMinPic := 0, TeclasMinBitmap := 0, HistorialMin := []
 global Minimizado := false, ControlMinimizar := 0, BotonMinimizar := 0, BotonTrazoMin := 0
 global IconoMinX := 0, IconoMinY := 0, BotonAjustes := 0, BotonClase := 0
 global FrenteOrdenMostrador := [], FrenteReordenandoMostrador := false
@@ -700,12 +702,14 @@ TeclaAbajo(ih, vk, sc) {
         Presionadas.Delete(0x1D)
         PintarTecla(0x1D, "")
         QuitarUltimo("Ctrl")
+        QuitarCtrlFantasmaMinimizado()
     }
 
     Presionadas[sc] := A_TickCount
     if Soltadas.Has(sc)
         Soltadas.Delete(sc)
     PintarTecla(sc, EsModificador(sc) ? "mod" : "normal")
+    RegistrarTeclaMinimizada(TextoCombo(sc, vk))
     AgregarAlHistorial(TextoCombo(sc, vk), true)
 }
 
@@ -2619,7 +2623,11 @@ AlternarResplandorMouse() {
 
 LiberarHaloMouse(*) {
     DestruirPanelNota()
-    global ControlMinimizar, AjustesMouseGui, NotasGui
+    global ControlMinimizar, AjustesMouseGui, NotasGui, TeclasMinBitmap
+    if TeclasMinBitmap {
+        DllCall("DeleteObject", "ptr", TeclasMinBitmap)
+        TeclasMinBitmap := 0
+    }
     if IsObject(NotasGui)
         NotasGui.Destroy()
     if IsObject(ControlMinimizar)
@@ -3081,8 +3089,10 @@ PintarGrupoHistorial(dc, grupo, x, y, maxW, alto, px) {
     }
 }
 
-DibujarHistorial(w, h, vertical := false) {
+DibujarHistorial(w, h, vertical := false, entradas := unset, compacto := false) {
     global Historial, U, AvisoActual
+    if !IsSet(entradas)
+        entradas := Historial
     pantalla := DllCall("GetDC", "ptr", 0, "ptr")
     dc := DllCall("CreateCompatibleDC", "ptr", pantalla, "ptr")
     bmp := DllCall("CreateCompatibleBitmap", "ptr", pantalla, "int", w, "int", h, "ptr")
@@ -3098,21 +3108,26 @@ DibujarHistorial(w, h, vertical := false) {
     pad := Max(4, Round(U * 0.18))
     cab := Round(U * 0.42), alto := Round(U * 0.62)
     px := Max(9, Round(U * 0.27))
+    if compacto {
+        cab := 3, alto := h - 6
+        px := Max(10, Round(14 * A_ScreenDPI / 96))
+    }
     etiqueta := "RECIENTES  ·  hasta 4 teclas →"
-    TextoHistorial(dc, etiqueta, pad, 1, w - 2 * pad, cab, Max(8, Round(U * 0.21)), "AAAAAA")
-    n := Historial.Length
+    if !compacto
+        TextoHistorial(dc, etiqueta, pad, 1, w - 2 * pad, cab, Max(8, Round(U * 0.21)), "AAAAAA")
+    n := entradas.Length
     if !n {
         TextoHistorial(dc, "Pulsa una tecla o un atajo para comenzar", pad, cab,
             w - 2 * pad, alto, px, "AAAAAA")
     } else if vertical {
-        for i, entrada in Historial {
+        for i, entrada in entradas {
             grupo := MedirGrupoHistorial(dc, entrada, px)
             y := cab + (i - 1) * (alto + Round(U * 0.12))
             PintarGrupoHistorial(dc, grupo, pad, y, w - 2 * pad, alto, px)
         }
     } else {
         grupos := [], total := 0, separacion := Round(U * 0.45)
-        for entrada in Historial {
+        for entrada in entradas {
             grupo := MedirGrupoHistorial(dc, entrada, px)
             grupos.Push(grupo)
             total += grupo.w + separacion
@@ -3120,18 +3135,21 @@ DibujarHistorial(w, h, vertical := false) {
         total -= separacion
         omitidas := false, limite := w - 2 * pad
         ; Priorizar las acciones recientes completas si no caben las cuatro.
-        while (grupos.Length > 1 && total > limite - (omitidas ? Round(U * 0.5) : 0)) {
+        while (!compacto && grupos.Length > 1 && total > limite - (omitidas ? Round(U * 0.5) : 0)) {
             total -= grupos[1].w + separacion
             grupos.RemoveAt(1)
             omitidas := true
         }
+        ajuste := compacto ? Min(1.0, limite / Max(1, total)) : 1.0
+        separacion := Round(separacion * ajuste)
+        px := Max(8, Round(px * ajuste))
         x := pad
         if omitidas {
             TextoHistorial(dc, "…", x, cab, Round(U * 0.4), alto, px, "AAAAAA")
             x += Round(U * 0.5)
         }
         for i, grupo in grupos {
-            espacio := Min(grupo.w, w - pad - x)
+            espacio := Min(Round(grupo.w * ajuste), w - pad - x)
             PintarGrupoHistorial(dc, grupo, x, cab, espacio, alto, px)
             x += espacio
             if i < grupos.Length {
@@ -3170,20 +3188,22 @@ ContarTeclasHistorial(texto) {
     return cantidad
 }
 
-LimitarHistorial() {
+LimitarHistorial(entradas := unset) {
     global Historial
+    if !IsSet(entradas)
+        entradas := Historial
     total := 0
-    for entrada in Historial
+    for entrada in entradas
         total += ContarTeclasHistorial(entrada)
     ; Retirar primero los atajos antiguos completos, sin partir sus teclas.
-    while (total > 4 && Historial.Length > 1) {
-        total -= ContarTeclasHistorial(Historial[1])
-        Historial.RemoveAt(1)
+    while (total > 4 && entradas.Length > 1) {
+        total -= ContarTeclasHistorial(entradas[1])
+        entradas.RemoveAt(1)
     }
     ; Un atajo excepcional con mas de cuatro teclas conserva las cuatro finales.
-    if (total > 4 && Historial.Length = 1) {
+    if (total > 4 && entradas.Length = 1) {
         teclas := [], sufijo := ""
-        for parte in PartesEntradaHistorial(Historial[1]) {
+        for parte in PartesEntradaHistorial(entradas[1]) {
             if (parte.tipo = "tecla" || parte.tipo = "mod")
                 teclas.Push(parte.texto)
             else if parte.tipo = "resultado"
@@ -3196,7 +3216,7 @@ LimitarHistorial() {
         texto := ""
         for i, tecla in teclas
             texto .= (i = 1 ? "" : " + ") tecla
-        Historial[1] := texto sufijo
+        entradas[1] := texto sufijo
     }
 }
 
@@ -3217,7 +3237,7 @@ AnchoControlesMostrador() {
 
 CrearControlMinimizar() {
     global ControlMinimizar, BotonMinimizar, BotonAjustes, BotonNotas, BotonAnotaciones, BotonClase
-    global BotonTrazoMin
+    global BotonTrazoMin, BotonTeclasMin, TeclasMinPic
     ; Una ventana independiente permite pulsarlo incluso con el teclado bloqueado.
     ControlMinimizar := Gui("+AlwaysOnTop -Caption +ToolWindow -DPIScale +E0x08000000", "Minimizar mostrador")
     ControlMinimizar.MarginX := 0, ControlMinimizar.MarginY := 0
@@ -3238,6 +3258,9 @@ CrearControlMinimizar() {
     BotonTrazoMin := ControlMinimizar.AddText("x0 y0 w26 h20 Center +0x200 +0x100 Hidden", "▴")
     BotonTrazoMin.SetFont("c8AB4F8", "Segoe UI Symbol")
     BotonTrazoMin.OnEvent("Click", AlternarTrazoMinimizado)
+    BotonTeclasMin := ControlMinimizar.AddText("x0 y0 w38 h38 Center +0x200 +0x100 Hidden", "T ○")
+    BotonTeclasMin.OnEvent("Click", AlternarTeclasMinimizadas)
+    TeclasMinPic := ControlMinimizar.AddText("x0 y0 w1 h1 +0xE Hidden")
     ControlMinimizar.OnEvent("ContextMenu", AbrirMenuAjustes)
     ControlMinimizar.OnEvent("Close", (*) => AlternarMinimizado())
 }
@@ -3256,6 +3279,7 @@ ActualizarControlMinimizar() {
         return
     global ControlMinimizar, BotonMinimizar, BotonAjustes, BotonNotas, BotonAnotaciones, BotonClase, Minimizado, Visible, overlay, U
     global IconoMinX, IconoMinY, MostrarTeclado, MostrarHistorial, BotonClaseTam, UIImagenesModernas, BotonTrazoMin
+    global BotonTeclasMin, TeclasMinPic, TeclasMinActivas, HistorialMin
     if !IsObject(ControlMinimizar)
         return
     if (!Minimizado && !Visible) {
@@ -3264,16 +3288,17 @@ ActualizarControlMinimizar() {
     }
     if Minimizado {
         tam := Max(30, Round(38 * A_ScreenDPI / 96))
-        ancho := tam, separacion := 0
+        anchoTeclas := TeclasMinActivas && HistorialMin.Length ? Round(420 * A_ScreenDPI / 96) : 0
+        ancho := 2 * tam + anchoTeclas, separacion := 0
         altoFlecha := Max(18, Round(22 * A_ScreenDPI / 96))
         alto := tam + altoFlecha
-        x := IconoMinX, y := IconoMinY - altoFlecha
+        x := IconoMinX - anchoTeclas, y := IconoMinY - altoFlecha
         BotonMinimizar.Text := "⌨"
         ControlMinimizar.Title := "Expandir teclado (Ctrl+Alt+N)"
     } else {
         overlay.GetPos(&ox, &oy, &ow, &oh)
         tam := TamBotonMinimizar()
-        altoFlecha := 0, alto := tam
+        altoFlecha := 0, alto := tam, anchoTeclas := 0
         pad := Round(U * 0.3)
         margenY := MostrarTeclado ? pad : Round(pad * 0.6)
         separacion := Max(2, Round(U * 0.1))
@@ -3287,14 +3312,28 @@ ActualizarControlMinimizar() {
     info := Buffer(40, 0)
     NumPut("uint", 40, info)
     if DllCall("GetMonitorInfoW", "ptr", monitor, "ptr", info) {
+        if Minimizado {
+            anchoTeclas := Min(anchoTeclas, Max(0, NumGet(info, 28, "int") - NumGet(info, 20, "int") - 2 * tam))
+            ancho := 2 * tam + anchoTeclas
+            x := IconoMinX - anchoTeclas
+        }
         x := Max(NumGet(info, 20, "int"), Min(x, NumGet(info, 28, "int") - ancho))
         y := Max(NumGet(info, 24, "int"), Min(y, NumGet(info, 32, "int") - alto))
     }
-    IconoMinX := Minimizado ? x : x + 4 * (tam + separacion)
+    IconoMinX := Minimizado ? x + anchoTeclas : x + 4 * (tam + separacion)
     IconoMinY := y + altoFlecha
+    BotonTeclasMin.Visible := Minimizado
+    TeclasMinPic.Visible := Minimizado && anchoTeclas > 0
     BotonTrazoMin.Visible := Minimizado
     if Minimizado {
-        BotonTrazoMin.Move(0, 0, tam, altoFlecha)
+        BotonTrazoMin.Move(anchoTeclas, 0, tam, altoFlecha)
+        BotonTeclasMin.Move(anchoTeclas + tam, altoFlecha, tam, tam)
+        BotonTeclasMin.Text := TeclasMinActivas ? "T ●" : "T ○"
+        BotonTeclasMin.SetFont("s" Pt(tam * 0.32) (TeclasMinActivas ? " c71DCA7" : " cAAAAAA"), "Segoe UI Symbol")
+        if anchoTeclas > 0 {
+            TeclasMinPic.Move(0, altoFlecha, anchoTeclas - 4, tam)
+            PintarTeclasMinimizadas(anchoTeclas - 4, tam)
+        }
         BotonTrazoMin.SetFont("s" Pt(altoFlecha * 0.8) " c8AB4F8", "Segoe UI Symbol")
         ActualizarFlechaTrazoMinimizado()
     }
@@ -3315,9 +3354,51 @@ ActualizarControlMinimizar() {
         BotonAjustes.Move(3 * (tam + separacion), 0, tam, tam)
         BotonAjustes.SetFont("s" Pt(tam * 0.65) " cF1F1F1", "Segoe UI Symbol")
     }
-    BotonMinimizar.Move(Minimizado ? 0 : 4 * (tam + separacion), altoFlecha, tam, tam)
+    BotonMinimizar.Move(Minimizado ? anchoTeclas : 4 * (tam + separacion), altoFlecha, tam, tam)
     BotonMinimizar.SetFont("s" Pt(tam * 0.65) " cF1F1F1", "Segoe UI Symbol")
     MostrarCapaMostrador(ControlMinimizar, x, y, ancho, alto)
+}
+
+; El interruptor sólo controla las mini teclas del modo minimizado.
+AlternarTeclasMinimizadas(*) {
+    global TeclasMinActivas, HistorialMin, ArchivoConfig
+    TeclasMinActivas := !TeclasMinActivas
+    HistorialMin := []
+    IniWrite(TeclasMinActivas ? 1 : 0, ArchivoConfig, "Teclado", "TeclasMinimizadas")
+    ActualizarControlMinimizar()
+}
+
+RegistrarTeclaMinimizada(texto) {
+    global TeclasMinActivas, Minimizado, HistorialMin
+    if !TeclasMinActivas || !Minimizado
+        return
+    n := HistorialMin.Length
+    ultima := n ? HistorialMin[n] : ""
+    if n && ultima = texto
+        return
+    if n && InStr(texto, ultima " + ") = 1
+        HistorialMin[n] := texto
+    else
+        HistorialMin.Push(texto)
+    LimitarHistorial(HistorialMin)
+    ActualizarControlMinimizar()
+}
+
+QuitarCtrlFantasmaMinimizado() {
+    global HistorialMin
+    n := HistorialMin.Length
+    if n && HistorialMin[n] = "Ctrl"
+        HistorialMin.Pop()
+}
+
+PintarTeclasMinimizadas(w, h) {
+    global HistorialMin, TeclasMinPic, TeclasMinBitmap
+    nuevo := DibujarHistorial(w, h, false, HistorialMin, true)
+    SendMessage(0x172, 0, nuevo, TeclasMinPic)
+    anterior := TeclasMinBitmap
+    TeclasMinBitmap := nuevo
+    if anterior
+        DllCall("DeleteObject", "ptr", anterior)
 }
 
 ; Acceso a la paleta sin expandir el teclado. Ocultar conserva los dibujos.
@@ -3352,9 +3433,10 @@ AlternarTrazoMinimizado(*) {
 }
 
 AlternarMinimizado() {
-    global Minimizado, Redimension, overlay, Visible, Presionadas, Soltadas, Teclas, ControlMinimizar
+    global Minimizado, Redimension, overlay, Visible, Presionadas, Soltadas, Teclas, ControlMinimizar, HistorialMin
     if IsObject(Redimension)
         return
+    HistorialMin := []
     Minimizado := !Minimizado
     if Minimizado {
         overlay.Hide()
