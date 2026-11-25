@@ -445,3 +445,7 @@ anotaciones, las marcas siguen dejando pasar los clics hacia las aplicaciones.
 ### Icono del teclado minimizado
 
 Arrastra el icono del teclado para moverlo libremente. Al soltarlo cerca del costado izquierdo o derecho, se ajusta a ese borde. Su posición queda guardada. Un clic sin arrastrar expande el teclado. Shift + clic en el icono activa o desactiva las mini teclas y el icono se pone verde cuando están activas; la pequeña flecha encima abre u oculta la paleta de dibujo.
+
+### Controles compactos
+
+La flecha de dibujo conserva un icono pequeño, con un área de clic de todo el ancho y separada del teclado. La barra del teclado abierto usa iconos de trazo fino y color uniforme. El aura del mouse se oculta al pasar sobre estos controles y vuelve al salir para evitar manchas amarillas alrededor de la barra.

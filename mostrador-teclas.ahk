@@ -97,6 +97,7 @@ global TeclasMinEscala := Max(0.5, Min(2.5, Float(IniRead(ArchivoConfig, "Teclad
 global TeclasMinX := IniRead(ArchivoConfig, "Teclado", "MiniX", "")
 global TeclasMinY := IniRead(ArchivoConfig, "Teclado", "MiniY", "")
 global Minimizado := false, ControlMinimizar := 0, BotonMinimizar := 0, BotonTrazoMin := 0
+global IconosBarraCache := Map(), HaloSobreBarra := false
 global ArrastreIconoMin := 0
 global IconoGuardadoX := IniRead(ArchivoConfig, "Teclado", "IconoMinX", "")
 global IconoGuardadoY := IniRead(ArchivoConfig, "Teclado", "IconoMinY", "")
@@ -2588,10 +2589,27 @@ DestruirHaloMouse() {
 }
 
 ActualizarHaloMouse() {
-    global HaloMouse, HaloDC, HaloTam, HaloX, HaloY
+    global HaloMouse, HaloDC, HaloTam, HaloX, HaloY, ControlMinimizar, HaloSobreBarra
     punto := Buffer(8, 0)
     if !DllCall("GetCursorPos", "ptr", punto)
         return
+    sobreBarra := false
+    if HwndGuiMostrador(ControlMinimizar, true) {
+        ControlMinimizar.GetPos(&bx, &by, &bw, &bh)
+        mx := NumGet(punto, 0, "int"), my := NumGet(punto, 4, "int")
+        sobreBarra := mx >= bx && mx < bx + bw && my >= by && my < by + bh
+    }
+    if sobreBarra {
+        HaloMouse.Hide()
+        HaloSobreBarra := true
+        return
+    }
+    if HaloSobreBarra {
+        HaloSobreBarra := false
+        HaloMouse.Show("NoActivate")
+        HaloX := "", HaloY := ""
+        ReordenarCapasMostrador()
+    }
     x := NumGet(punto, 0, "int") - HaloTam // 2
     y := NumGet(punto, 4, "int") - HaloTam // 2
     if (x = HaloX && y = HaloY)
@@ -3242,6 +3260,66 @@ LimitarHistorial(entradas := unset) {
 ; BOTON SUPERIOR DERECHO Y MODO MINIMIZADO CON ICONO FLOTANTE
 ; ============================================================
 
+PintarIconoBarra(control, tipo, w, h, color := "CDD1D6", fondo := "0F0F0F") {
+    global IconosBarraCache
+    clave := tipo "|" w "|" h "|" color "|" fondo
+    if IconosBarraCache.Get(control.Hwnd, "") = clave
+        return
+    imagen := DibujarIconoBarra(tipo, w, h, color, fondo)
+    PonerImagenModerna(control, imagen)
+    IconosBarraCache[control.Hwnd] := clave
+}
+
+DibujarIconoBarra(tipo, w, h, color, fondo) {
+    s := RelojCrearSuperficie(w * 4, h * 4)
+    try {
+        RelojFondo(s.dc, s.w, s.h, fondo)
+        lado := Min(s.w, s.h)
+        cx := s.w / 2, cy := s.h / 2
+        u := lado * 0.60, grosor := Max(4, lado * 0.045)
+        paths := []
+        switch tipo {
+            case "menos": paths := [[[-0.28,0],[0.28,0]]]
+            case "nota": paths := [[[-0.30,0.30],[-0.23,0.08],[0.19,-0.34],[0.34,-0.19],[-0.08,0.23],[-0.30,0.30]],[[-0.23,0.08],[-0.08,0.23]]]
+            case "trazo": paths := [[[-0.34,-0.27],[-0.13,-0.34],[0.05,-0.22],[-0.13,0.04],[-0.04,0.28],[0.16,0.30],[0.34,0.10]]]
+            case "reloj":
+                RelojContorno(s.dc,cx,cy,u*0.36,grosor,color)
+                paths := [[[0,-0.23],[0,0],[0.21,0.08]]]
+            case "ajustes":
+                RelojContorno(s.dc,cx,cy,u*0.25,grosor,color)
+                RelojContorno(s.dc,cx,cy,u*0.08,grosor,color)
+                Loop 8 {
+                    a := (A_Index - 1) * 3.141592653589793 / 4
+                    paths.Push([[Cos(a)*0.26,Sin(a)*0.26],[Cos(a)*0.37,Sin(a)*0.37]])
+                }
+            case "teclado":
+                paths := [[[-0.45,-0.27],[0.45,-0.27],[0.45,0.27],[-0.45,0.27],[-0.45,-0.27]],[[-0.22,0.16],[0.22,0.16]]]
+                Loop 2 {
+                    yy := -0.14 + (A_Index-1)*0.14
+                    Loop 5 {
+                        xx := -0.32+(A_Index-1)*0.16
+                        paths.Push([[xx,yy],[xx+0.03,yy]])
+                    }
+                }
+            case "arriba", "abajo":
+                u := 24 * A_ScreenDPI / 96
+                cy := s.h - 20 * A_ScreenDPI / 96
+                signo := tipo = "arriba" ? 1 : -1
+                grosor := 4
+                paths := [[[-0.4,0.16*signo],[0,-0.16*signo],[0.4,0.16*signo]]]
+        }
+        for path in paths {
+            puntos := []
+            for punto in path
+                puntos.Push([cx + punto[1]*u, cy + punto[2]*u])
+            RelojTrazo(s.dc,puntos,grosor,color,true)
+        }
+        return RelojReducirSuperficie(s,w,h)
+    } finally {
+        RelojLiberarSuperficie(s)
+    }
+}
+
 TamBotonMinimizar() {
     global U
     return Max(18, Round(U * 0.65))
@@ -3260,19 +3338,19 @@ CrearControlMinimizar() {
     ControlMinimizar.MarginX := 0, ControlMinimizar.MarginY := 0
     ControlMinimizar.BackColor := "272727"
     ControlMinimizar.SetFont("s" Pt(17) " cF1F1F1", "Segoe UI Symbol")
-    BotonMinimizar := ControlMinimizar.AddText("x0 y0 w26 h26 Center +0x200 +0x100", "−")
+    BotonMinimizar := ControlMinimizar.AddText("x0 y0 w26 h26 +0xE +0x100")
     BotonMinimizar.OnEvent("Click", ClickIconoMostrador)
-    BotonAjustes := ControlMinimizar.AddText("x0 y0 w26 h26 Center +0x200 +0x100", "⚙")
+    BotonAjustes := ControlMinimizar.AddText("x0 y0 w26 h26 +0xE +0x100")
     BotonAjustes.OnEvent("Click", AbrirMenuAjustes)
-    BotonNotas := ControlMinimizar.AddText("x0 y0 w26 h26 Center +0x200 +0x100", "✎")
+    BotonNotas := ControlMinimizar.AddText("x0 y0 w26 h26 +0xE +0x100")
     BotonNotas.OnEvent("Click", (*) => EditarNotaDirecta())
     BotonNotas.SetFont("cFF6B7D")
-    BotonAnotaciones := ControlMinimizar.AddText("x0 y0 w26 h26 Center +0x200 +0x100", Chr(0xE76D))
+    BotonAnotaciones := ControlMinimizar.AddText("x0 y0 w26 h26 +0xE +0x100")
     BotonAnotaciones.SetFont("s" Pt(17) " c8AB4F8", "Segoe MDL2 Assets")
     BotonAnotaciones.OnEvent("Click", AlternarAnotaciones)
     BotonClase := ControlMinimizar.AddText("x0 y0 w26 h26 +0xE +0x100")
     BotonClase.OnEvent("Click", AbrirPanelClase)
-    BotonTrazoMin := ControlMinimizar.AddText("x0 y0 w26 h20 Center +0x200 +0x100 Hidden", "▴")
+    BotonTrazoMin := ControlMinimizar.AddText("x0 y0 w26 h20 +0xE +0x100 Hidden")
     BotonTrazoMin.SetFont("c8AB4F8", "Segoe UI Symbol")
     BotonTrazoMin.OnEvent("Click", AlternarTrazoMinimizado)
     ControlMinimizar.OnEvent("ContextMenu", AbrirMenuAjustes)
@@ -3304,10 +3382,10 @@ ActualizarControlMinimizar() {
         tam := Max(30, Round(38 * A_ScreenDPI / 96))
         discreto := Max(12, Round(14 * A_ScreenDPI / 96))
         ancho := tam, separacion := 0
-        altoFlecha := Max(6, Round(8 * A_ScreenDPI / 96))
+        altoFlecha := Max(22, Round(24 * A_ScreenDPI / 96))
         alto := tam + altoFlecha
         x := IconoMinX, y := IconoMinY - altoFlecha
-        BotonMinimizar.Text := "⌨"
+
         ControlMinimizar.Title := "Clic: expandir · Shift + clic: mini teclas"
     } else {
         overlay.GetPos(&ox, &oy, &ow, &oh)
@@ -3318,7 +3396,7 @@ ActualizarControlMinimizar() {
         separacion := Max(2, Round(U * 0.1))
         ancho := AnchoControlesMostrador()
         x := ox + ow - pad - ancho, y := oy + margenY
-        BotonMinimizar.Text := "−"
+
         ControlMinimizar.Title := "Minimizar teclado (Ctrl+Alt+N)"
     }
     ; Mantener el control accesible si el mostrador rebasa una pantalla.
@@ -3335,7 +3413,7 @@ ActualizarControlMinimizar() {
     if Minimizado {
         ControlMinimizar.BackColor := "272727"
         WinSetTransColor("Off", ControlMinimizar)
-        BotonTrazoMin.Move(Round((tam - discreto) / 2), 0, discreto, discreto)
+        BotonTrazoMin.Move(0, 0, tam, altoFlecha)
         BotonTrazoMin.SetFont("s" Pt(9 * A_ScreenDPI / 96) " c888888", "Segoe UI Symbol")
         ActualizarFlechaTrazoMinimizado()
     }
@@ -3345,21 +3423,15 @@ ActualizarControlMinimizar() {
     BotonAjustes.Visible := !Minimizado
     if !Minimizado {
         WinSetTransColor("Off", ControlMinimizar)
-        ControlMinimizar.BackColor := "272727"
-        BotonNotas.Move(0, 0, tam, tam)
-        BotonNotas.SetFont("s" Pt(tam * 0.65) " cFF6B7D", "Segoe UI Symbol")
-        BotonAnotaciones.Move(tam + separacion, 0, tam, tam)
-        BotonAnotaciones.SetFont("s" Pt(tam * 0.62) " c8AB4F8", "Segoe MDL2 Assets")
-        BotonClase.Move(2 * (tam + separacion), 0, tam, tam)
-        if BotonClaseTam != tam || !UIImagenesModernas.Has(BotonClase.Hwnd) {
-            PonerImagenModerna(BotonClase, DibujarIconoReloj(tam))
-            BotonClaseTam := tam
+        ControlMinimizar.BackColor := "0F0F0F"
+        for i, control in [BotonNotas, BotonAnotaciones, BotonClase, BotonAjustes] {
+            control.Move((i - 1) * (tam + separacion), 0, tam, tam)
+            PintarIconoBarra(control, ["nota", "trazo", "reloj", "ajustes"][i], tam, tam)
         }
-        BotonAjustes.Move(3 * (tam + separacion), 0, tam, tam)
-        BotonAjustes.SetFont("s" Pt(tam * 0.65) " cF1F1F1", "Segoe UI Symbol")
     }
     BotonMinimizar.Move(Minimizado ? 0 : 4 * (tam + separacion), altoFlecha, tam, tam)
-    BotonMinimizar.SetFont("s" Pt(tam * 0.65) (Minimizado && TeclasMinActivas ? " c71DCA7" : " cF1F1F1"), "Segoe UI Symbol")
+    PintarIconoBarra(BotonMinimizar, Minimizado ? "teclado" : "menos", tam, tam,
+        Minimizado && TeclasMinActivas ? "71DCA7" : "CDD1D6", Minimizado ? "272727" : "0F0F0F")
     MostrarCapaMostrador(ControlMinimizar, x, y, ancho, alto)
     ActualizarPanelMiniTeclas()
 }
@@ -3432,7 +3504,7 @@ AnclarIconoMin() {
         x := Max(l, Min(x, r - w)), y := Max(t, Min(y, b - h))
     }
     IconoMinX := x
-    IconoMinY := y + Max(6, Round(8 * A_ScreenDPI / 96))
+    IconoMinY := y + Max(22, Round(24 * A_ScreenDPI / 96))
     IconoGuardadoX := IconoMinX, IconoGuardadoY := IconoMinY
     IniWrite(IconoGuardadoX, ArchivoConfig, "Teclado", "IconoMinX")
     IniWrite(IconoGuardadoY, ArchivoConfig, "Teclado", "IconoMinY")
@@ -3568,9 +3640,8 @@ ActualizarFlechaTrazoMinimizado() {
     global BotonTrazoMin, Minimizado, CerrandoMostrador
     if CerrandoMostrador || !Minimizado || !IsObject(BotonTrazoMin)
         return
-    flecha := PaletaTrazoDesplegada() ? "▾" : "▴"
-    if BotonTrazoMin.Text != flecha
-        BotonTrazoMin.Text := flecha
+    BotonTrazoMin.GetPos(,, &w, &h)
+    PintarIconoBarra(BotonTrazoMin, PaletaTrazoDesplegada() ? "abajo" : "arriba", w, h, "999999", "272727")
 }
 
 AlternarTrazoMinimizado(*) {
