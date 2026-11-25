@@ -245,15 +245,13 @@ La propia nota tiene estos controles:
 |---|---|
 | ✎ / ✓ | Editar el texto / terminar y guardar |
 | A− / A+ | Reducir / aumentar la letra en 2 puntos (entre 10 y 48) |
-| − / pestaña NOTA | Guardar la nota detrás del teclado / desplegarla |
+| − / flecha de la pestaña NOTA | Plegar el panel / desplegarlo |
 | × | Ocultar la nota sin borrarla |
 | ⚙ | Colores, fuente, negrita, altura y espacios visibles |
 
 El botón ✎ principal recupera una nota oculta y permite editarla. **Ctrl + Alt + T**
 también muestra u oculta la nota. Los controles funcionan con el teclado bloqueado.
-La nota acompaña al teclado al moverlo o cambiar su tamaño y se oculta al minimizar
-todo el mostrador. La nota se expande hacia arriba y sus controles se quedan
-junto al mostrador. El teclado conserva su posición. Durante la edición no se activa el ocultado automático.
+La nota es un panel independiente. Arrastra el título para moverlo y sus bordes o esquinas para cambiar su tamaño. La posición y el tamaño quedan guardados. Sigue visible al minimizar u ocultar el teclado.
 
 Se usa una fuente monoespaciada (Consolas por defecto). En ⚙ puedes cambiar los colores
 del texto y del fondo, elegir otra fuente, activar negrita y ajustar la altura de
@@ -261,8 +259,7 @@ del texto y del fondo, elegir otra fuente, activar negrita y ajustar la altura d
 **Marcar espacios** representa cada espacio con `·` y cada tabulación con `→` durante
 la lectura; al editar se muestra el texto original y se conservan todos los espacios.
 
-Para mantener la nota visible fuera de la edición, desactiva el ocultado automático
-con **Ctrl + Alt + H**. El contenido se guarda en `overlay-nota.txt` y la apariencia
+El contenido se guarda en `overlay-nota.txt` y la apariencia
 en `overlay-config.ini`; ambos son locales y están excluidos de Git.
 
 
@@ -299,17 +296,9 @@ desde el mostrador. Aísla las consultas de accesibilidad para que un proveedor 
 no bloquee el teclado. Ambos archivos deben permanecer juntos. El texto seleccionado
 se procesa en memoria y las preferencias se guardan en `[Seleccion]` de `overlay-config.ini`.
 
-Las notas usan una tarjeta de esquinas redondeadas, márgenes amplios y una barra
-grafito con botones de mayor tamaño. Su contenido conserva la fuente, el tamaño y
-los colores elegidos en ajustes, y sigue expandiéndose hacia arriba.
+Las notas usan una tarjeta de esquinas redondeadas con iconos de trazo fino y color uniforme: editar o guardar, letra menor y mayor, ajustes, plegar y cerrar. El aura se oculta al pasar por su cabecera. La pestaña plegada también se puede arrastrar desde el título; su flecha restaura el panel con el tamaño anterior.
 
-Al contraer la nota, sólo asoma una pequeña pestaña **▴ NOTA** centrada sobre el
-mostrador. Púlsala para desplegar la tarjeta hacia arriba. La barra de edición
-completa aparece con la tarjeta abierta.
-
-Las notas abiertas tienen los controles en la esquina superior derecha, con
-iconos de Windows y minimizar y cerrar al extremo derecho. Su fondo se sincroniza
-con el teclado por defecto. Para elegir otro color, desmarca **Usar el mismo fondo
+Su fondo se sincroniza con el teclado por defecto. Para elegir otro color, desmarca **Usar el mismo fondo
 del teclado** en los ajustes de la nota y cambia **Fondo personalizado**.
 
 

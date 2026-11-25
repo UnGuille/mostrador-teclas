@@ -116,6 +116,11 @@ global NotaColor := LeerColorTema("Notas", "Color", "FFF4CC", "F1F1F1")
 global NotaFondo := LeerColorTema("Notas", "Fondo", "182438", "181818")
 global NotaFondoTeclado := Integer(IniRead(ArchivoConfig, "Notas", "FondoTeclado", "1"))
 global NotaContraida := Integer(IniRead(ArchivoConfig, "Notas", "Contraida", "0"))
+global NotaPanelX := IniRead(ArchivoConfig, "Notas", "PanelX", "")
+global NotaPanelY := IniRead(ArchivoConfig, "Notas", "PanelY", "")
+global NotaPanelW := Max(300, Float(IniRead(ArchivoConfig, "Notas", "PanelAncho", "580")))
+global NotaPanelH := Max(120, Float(IniRead(ArchivoConfig, "Notas", "PanelAlto", "220")))
+global NotaControles := 0, NotaBotones := [], NotaVistaContraida := false
 global PanelNota := 0, NotaEditor := 0, NotaEstado := 0
 global NotaAncho := 0, NotaAlto := 0, NotaOffsetX := 0
 global NotaEditando := false, NotaGuardada := NotaTexto
@@ -186,6 +191,10 @@ try {
     OnMessage(0x0047, ProgramarAreaCapturaAnotaciones)
     OnMessage(0x0006, ActivacionDialogosMostrador)
     OnMessage(0x0047, CambioCapasMostrador)
+    OnMessage(0x0201, ArrastrarNotaLibre)
+    OnMessage(0x0083, AreaNotaLibre)
+    OnMessage(0x0084, BordeNotaLibre)
+    OnMessage(0x0232, GuardarGeometriaNotaLibre)
     OnMessage(0x0201, PresionarIconoMin)
     OnMessage(0x0201, ArrastrarMiniTeclas)
     OnMessage(0x020A, RuedaMiniTeclas)
@@ -2589,7 +2598,7 @@ DestruirHaloMouse() {
 }
 
 ActualizarHaloMouse() {
-    global HaloMouse, HaloDC, HaloTam, HaloX, HaloY, ControlMinimizar, HaloSobreBarra
+    global HaloMouse, HaloDC, HaloTam, HaloX, HaloY, ControlMinimizar, HaloSobreBarra, PanelNota
     punto := Buffer(8, 0)
     if !DllCall("GetCursorPos", "ptr", punto)
         return
@@ -2598,6 +2607,11 @@ ActualizarHaloMouse() {
         ControlMinimizar.GetPos(&bx, &by, &bw, &bh)
         mx := NumGet(punto, 0, "int"), my := NumGet(punto, 4, "int")
         sobreBarra := mx >= bx && mx < bx + bw && my >= by && my < by + bh
+    }
+    if HwndGuiMostrador(PanelNota,true) {
+        PanelNota.GetPos(&nx,&ny,&nw)
+        mx := NumGet(punto,0,"int"), my := NumGet(punto,4,"int")
+        sobreBarra := sobreBarra || (mx >= nx && mx < nx+nw && my >= ny && my < ny+Round(40*A_ScreenDPI/96))
     }
     if sobreBarra {
         HaloMouse.Hide()
@@ -3279,6 +3293,12 @@ DibujarIconoBarra(tipo, w, h, color, fondo) {
         u := lado * 0.60, grosor := Max(4, lado * 0.045)
         paths := []
         switch tipo {
+            case "guardar": paths := [[[-0.34,-0.34],[0.23,-0.34],[0.34,-0.23],[0.34,0.34],[-0.34,0.34],[-0.34,-0.34]],[[-0.18,-0.34],[-0.18,-0.06],[0.16,-0.06],[0.16,-0.34]],[[-0.19,0.34],[-0.19,0.09],[0.19,0.09],[0.19,0.34]]]
+            case "cerrar": paths := [[[-0.28,-0.28],[0.28,0.28]],[[-0.28,0.28],[0.28,-0.28]]]
+            case "letramenos", "letramas":
+                paths := [[[-0.40,0.30],[-0.15,-0.32],[0.10,0.30]],[[-0.30,0.06],[0.00,0.06]],[[0.16,0],[0.42,0]]]
+                if tipo = "letramas"
+                    paths.Push([[0.29,-0.13],[0.29,0.13]])
             case "menos": paths := [[[-0.28,0],[0.28,0]]]
             case "nota": paths := [[[-0.30,0.30],[-0.23,0.08],[0.19,-0.34],[0.34,-0.19],[-0.08,0.23],[-0.30,0.30]],[[-0.23,0.08],[-0.08,0.23]]]
             case "trazo": paths := [[[-0.34,-0.27],[-0.13,-0.34],[0.05,-0.22],[-0.13,0.04],[-0.04,0.28],[0.16,0.30],[0.34,0.10]]]
@@ -3993,6 +4013,10 @@ CerrarMostrador(*) {
     OnMessage(0x0047, CambioCapasMostrador, 0)
     SetTimer(ReordenarCapasMostrador, 0)
     SetTimer(MoverIconoMin, 0)
+    OnMessage(0x0201, ArrastrarNotaLibre, 0)
+    OnMessage(0x0083, AreaNotaLibre, 0)
+    OnMessage(0x0084, BordeNotaLibre, 0)
+    OnMessage(0x0232, GuardarGeometriaNotaLibre, 0)
     OnMessage(0x0201, PresionarIconoMin, 0)
     OnMessage(0x0201, ArrastrarMiniTeclas, 0)
     OnMessage(0x020A, RuedaMiniTeclas, 0)
@@ -4127,6 +4151,9 @@ DestruirPanelNota() {
     try {
         GuardarNotaDirecta()
         ventanaNota := PanelNota
+        GuardarGeometriaNotaLibre(0, 0, 0, HwndGuiMostrador(ventanaNota))
+        if ventanaNota is Gui
+            LiberarImagenesModernas(ventanaNota)
         ; Invalidar primero las referencias que pueden consultar los mensajes de Windows.
         PanelNota := 0, NotaEditor := 0, NotaEstado := 0
         NotaAncho := 0, NotaAlto := 0, NotaOffsetX := 0
@@ -4138,72 +4165,133 @@ DestruirPanelNota() {
 }
 
 CrearNota() {
-    global overlay, Escala, NotaTam, NotaFuente, NotaColor, NotaFondo, NotaNegrita, NotaTexto, NotaEspacios
-    global PanelNota, NotaEditor, NotaEditando, NotaContraida, NotaEstado, U, GuiW, Col, NotaFondoTeclado
-    global NotaAncho, NotaAlto, NotaOffsetX
-    h := AltoNota(Escala)
-    if !h
+    global NotaMostrar, PanelNota, NotaEditor, NotaEstado, NotaEditando, NotaTexto, NotaTam, NotaFuente
+    global NotaColor, NotaNegrita, NotaEspacios, NotaFondoTeclado, NotaFondo, NotaContraida
+    global NotaControles, NotaBotones, NotaPanelW, NotaPanelH, NotaAncho, NotaAlto, NotaVistaContraida
+    if !NotaMostrar
         return
-    w := GuiW - 2 * Round(U * 0.3)
-    g := Gui("+AlwaysOnTop -Caption +ToolWindow -DPIScale +Owner" overlay.Hwnd, "Nota de clase")
-    g.BackColor := "303030"
-    fondoNota := NotaFondoTeclado ? Col.fondo : NotaFondo
-    g.MarginX := 0, g.MarginY := 0
-    if NotaContraida {
-        ; Sólo la pestaña asoma por detrás del borde superior del mostrador.
-        w := Min(w, Max(80, Round(120 * Escala * A_ScreenDPI / 96)))
-        g.Opt("+E0x08000000")
-        g.SetFont("s" Pt(Max(10, h * 0.55)) " cD6D6D6", "Segoe UI")
-        pestana := g.AddText(Format("x1 y1 w{} h{} Center +0x200 +0x100 Background{}", w - 2, h - 1, Col.fondo), "▴  NOTA")
-        pestana.OnEvent("Click", ContraerNota)
-        g.OnEvent("Close", (*) => OcultarNotaDirecta())
-        RedondearNota(g, w, h, Max(6, Round(h * 0.5)))
-        NotaAncho := w, NotaAlto := h, NotaOffsetX := (GuiW - w) // 2
-        PanelNota := g
-        return
-    }
-    cab := CabeceraNota(Escala)
-    pad := Max(7, Round(12 * Escala * A_ScreenDPI / 96))
-    tam := cab - 2 * Max(5, Round(cab * 0.15))
-    separacion := Max(4, Round(U * 0.14))
-    g.AddText(Format("x1 y1 w{} h{} Background{}", w - 2, h - 2, fondoNota))
-    g.AddText(Format("x1 y1 w{} h{} Background{}", w - 2, cab - 1, Col.fondo))
-    g.AddText(Format("x1 y{} w{} h1 Background272727", cab - 1, w - 2))
-    g.SetFont("s" Pt(Max(10, tam * 0.43)) " cAAAAAA", "Segoe UI")
-    anchoBotones := 6 * (tam + separacion)
-    NotaEstado := g.AddText(Format("x{} y1 w{} h{} +0x200 Background{}", pad,
-        Max(20, w - anchoBotones - 2 * pad), cab - 2, Col.fondo), NotaEditando ? "Nota · editando" : "Nota")
-    ; Glifos de Windows. Minimizar y cerrar ocupan el extremo superior derecho.
-    acciones := [[NotaEditando ? Chr(0xE74E) : Chr(0xE70F), (*) => EditarNotaDirecta(), "Segoe MDL2 Assets"],
-        ["A−", (*) => CambiarLetraNota(-2), "Segoe UI"],
-        ["A+", (*) => CambiarLetraNota(2), "Segoe UI"],
-        [Chr(0xE713), (*) => AbrirNotas(), "Segoe MDL2 Assets"],
-        [Chr(0xE921), (*) => ContraerNota(), "Segoe MDL2 Assets"],
-        [Chr(0xE8BB), (*) => OcultarNotaDirecta(), "Segoe MDL2 Assets"]]
-    for i, accion in acciones {
-        tinta := i = 1 && NotaEditando ? "FF899A" : "D6D6D6"
-        g.SetFont("s" Pt(tam * 0.48) " c" tinta " norm", accion[3])
-        boton := g.AddText(Format("x{} y{} w{} h{} Center +0x200 +0x100 Background{}",
-            w - pad - (7 - i) * (tam + separacion), (cab - tam) // 2, tam, tam, Col.fondo), accion[1])
-        boton.OnEvent("Click", accion[2])
-    }
-    if !NotaContraida {
-        g.SetFont("s" Max(6, Round(NotaTam * Escala)) " c" NotaColor (NotaNegrita ? " bold" : " norm"), NotaFuente)
-        opts := Format("x{} y{} w{} h{}", pad, cab + pad, w - 2 * pad, Max(1, h - cab - 2 * pad))
-        if NotaEditando {
-            NotaEditor := g.AddEdit(opts " Multi WantTab Limit0 -E0x200 -Border Background" fondoNota, NotaTexto)
-            NotaEditor.OnEvent("Change", NotaModificada)
-        } else {
-            lectura := g.AddText(opts " +0x80 +0x100 Background" fondoNota, TextoNotaVisible(NotaTexto, NotaEspacios))
-            lectura.OnEvent("DoubleClick", (*) => EditarNotaDirecta())
-        }
-    }
-    radio := Max(8, Round(14 * Escala * A_ScreenDPI / 96))
-    RedondearNota(g, w, h, radio)
-    g.OnEvent("Close", (*) => OcultarNotaDirecta())
-    g.OnEvent("Escape", (*) => FinalizarEdicionNota())
-    NotaAncho := w, NotaAlto := h, NotaOffsetX := Round(U * 0.3)
+    NotaVistaContraida := NotaContraida
+    dpi := A_ScreenDPI / 96
+    fondo := NotaFondoTeclado ? "0F0F0F" : NotaFondo
+    g := Gui("+AlwaysOnTop -Caption +ToolWindow -DPIScale", "Nota de clase")
     PanelNota := g
+    g.BackColor := fondo
+    g.MarginX := 0, g.MarginY := 0
+    NotaBotones := []
+    if NotaContraida {
+        NotaEstado := g.AddText("x0 y0 w84 h28 Center +0x200 +0x100", "NOTA")
+        expandir := g.AddText("x84 y0 w28 h28 +0xE +0x100")
+        expandir.OnEvent("Click", ContraerNota)
+        NotaControles := {pestana: NotaEstado, expandir: expandir}
+        NotaAncho := Round(120*dpi), NotaAlto := Round(28*dpi)
+    } else {
+        g.Opt("+Resize +MinSize" Round(300*dpi) "x" Round(120*dpi))
+        g.SetFont("s" Pt(12*dpi) " cAAAAAA", "Segoe UI")
+        NotaEstado := g.AddText("x8 y4 w80 h32 +0x200 +0x100", NotaEditando ? "Nota · editando" : "Nota")
+        acciones := [[NotaEditando ? "guardar" : "nota", EditarNotaDirecta],
+            ["letramenos", (*) => CambiarLetraNota(-2)], ["letramas", (*) => CambiarLetraNota(2)],
+            ["ajustes", (*) => AbrirNotas()], ["menos", ContraerNota], ["cerrar", OcultarNotaDirecta]]
+        for accion in acciones {
+            boton := g.AddText("x0 y0 w28 h28 +0xE +0x100")
+            boton.OnEvent("Click", accion[2])
+            NotaBotones.Push({control: boton, tipo: accion[1]})
+        }
+        g.SetFont("s" NotaTam " c" NotaColor (NotaNegrita ? " bold" : " norm"), NotaFuente)
+        if NotaEditando {
+            contenido := g.AddEdit("x8 y44 w100 h50 Multi WantTab Limit0 -E0x200 -Border Background" fondo, NotaTexto)
+            NotaEditor := contenido
+            contenido.OnEvent("Change", NotaModificada)
+        } else {
+            contenido := g.AddText("x8 y44 w100 h50 +0x80 +0x100 Background" fondo, TextoNotaVisible(NotaTexto, NotaEspacios))
+            contenido.OnEvent("DoubleClick", EditarNotaDirecta)
+        }
+        NotaControles := {contenido: contenido}
+        NotaAncho := Round(NotaPanelW*dpi), NotaAlto := Round(NotaPanelH*dpi)
+    }
+    g.OnEvent("Size", AjustarNotaLibre)
+    g.OnEvent("Close", OcultarNotaDirecta)
+    g.OnEvent("Escape", FinalizarEdicionNota)
+}
+
+AjustarNotaLibre(g, estado, w, h) {
+    global NotaVistaContraida, NotaControles, NotaBotones, NotaEstado, NotaAncho, NotaAlto, PanelNota
+    if HwndGuiMostrador(g) != HwndGuiMostrador(PanelNota)
+        return
+    if estado = -1 || !IsObject(NotaControles)
+        return
+    g.GetClientPos(,,&w,&h)
+    dpi := A_ScreenDPI / 96
+    NotaAncho := w, NotaAlto := h
+    if NotaVistaContraida {
+        NotaEstado.Move(0, 0, Max(1,w-h), h)
+        NotaControles.expandir.Move(w-h,0,h,h)
+        PintarIconoBarra(NotaControles.expandir,"arriba",h,h,"CDD1D6","0F0F0F")
+    } else {
+        cab := Round(40*dpi), tam := Round(28*dpi), gap := Round(4*dpi), pad := Round(10*dpi)
+        NotaEstado.Move(pad, 4, Max(20, w - 6*(tam+gap) - 2*pad), cab-8)
+        for i, d in NotaBotones {
+            d.control.Move(w - pad - (7-i)*(tam+gap), (cab-tam)//2, tam, tam)
+            PintarIconoBarra(d.control,d.tipo,tam,tam)
+        }
+        NotaControles.contenido.Move(pad,cab,Max(1,w-2*pad),Max(1,h-cab-pad))
+    }
+    RedondearNota(g,w,h,Round(12*dpi))
+}
+
+AreaNotaLibre(wParam, lParam, msg, hwnd) {
+    global PanelNota
+    if hwnd = HwndGuiMostrador(PanelNota)
+        return 0
+}
+
+BordeNotaLibre(wParam, lParam, msg, hwnd) {
+    global PanelNota, NotaContraida
+    if NotaContraida || hwnd != HwndGuiMostrador(PanelNota)
+        return
+    x := lParam & 0xFFFF, y := (lParam >> 16) & 0xFFFF
+    x := x >= 32768 ? x-65536 : x
+    y := y >= 32768 ? y-65536 : y
+    PanelNota.GetPos(&px,&py,&w,&h)
+    borde := Max(5,Round(6*A_ScreenDPI/96))
+    l := x-px < borde, r := px+w-x <= borde, t := y-py < borde, b := py+h-y <= borde
+    if t && l
+        return 13
+    if t && r
+        return 14
+    if b && l
+        return 16
+    if b && r
+        return 17
+    if l
+        return 10
+    if r
+        return 11
+    if t
+        return 12
+    if b
+        return 15
+}
+
+ArrastrarNotaLibre(wParam,lParam,msg,hwnd) {
+    global PanelNota, NotaEstado
+    if !HwndGuiMostrador(PanelNota) || !IsObject(NotaEstado) || hwnd != NotaEstado.Hwnd
+        return
+    DllCall("ReleaseCapture")
+    PostMessage(0x00A1,2,0,PanelNota)
+    return 0
+}
+
+GuardarGeometriaNotaLibre(wParam,lParam,msg,hwnd) {
+    global PanelNota, NotaPanelX, NotaPanelY, NotaPanelW, NotaPanelH, NotaVistaContraida, ArchivoConfig
+    if !hwnd || hwnd != HwndGuiMostrador(PanelNota) || !HwndGuiMostrador(PanelNota,true)
+        return
+    PanelNota.GetPos(&NotaPanelX,&NotaPanelY)
+    if !NotaVistaContraida {
+        PanelNota.GetClientPos(,,&w,&h)
+        NotaPanelW := w*96/A_ScreenDPI, NotaPanelH := h*96/A_ScreenDPI
+    }
+    for k,v in Map("PanelX",NotaPanelX,"PanelY",NotaPanelY,"PanelAncho",NotaPanelW,"PanelAlto",NotaPanelH)
+        IniWrite(v,ArchivoConfig,"Notas",k)
 }
 
 RedondearNota(g, w, h, radio) {
@@ -4226,25 +4314,22 @@ ActualizarNota(mensaje) {
 }
 
 PosicionarPanelNota() {
-    global PanelNota, Visible, Minimizado, overlay, Redimension, NotaAncho, NotaAlto, NotaOffsetX
-    criticoAnterior := A_IsCritical
-    Critical "On"
-    try {
-        ventanaNota := PanelNota
-        if !(ventanaNota is Gui)
-            return
-        if !VentanaMostradorDisponible() || !Visible || Minimizado || IsObject(Redimension) {
-            ventanaNota.Hide()
-            return
-        }
-        if NotaAncho <= 0 || NotaAlto <= 0
-            return
-        overlay.GetPos(&x, &y)
-        ; La pestaña se centra y la tarjeta abierta conserva el ancho del mostrador.
-        MostrarCapaMostrador(ventanaNota, x + NotaOffsetX, y - NotaAlto, NotaAncho, NotaAlto)
-    } finally {
-        Critical criticoAnterior
+    global PanelNota, NotaAncho, NotaAlto, NotaPanelX, NotaPanelY, overlay
+    if !(PanelNota is Gui) || NotaAncho <= 0 || NotaAlto <= 0
+        return
+    if HwndGuiMostrador(PanelNota,true)
+        return
+    if !IsNumber(NotaPanelX) || !IsNumber(NotaPanelY) {
+        overlay.GetPos(&x,&y)
+        NotaPanelX := x, NotaPanelY := y-NotaAlto-12
     }
+    pos := PosicionEnPantalla(Number(NotaPanelX),Number(NotaPanelY),NotaAncho,NotaAlto)
+    if !HwndGuiMostrador(PanelNota,true)
+        PanelNota.Show("NoActivate")
+    DllCall("SetWindowPos","ptr",PanelNota.Hwnd,"ptr",0,"int",pos[1],"int",pos[2],"int",NotaAncho,"int",NotaAlto,"uint",0x0014)
+    ReordenarCapasMostrador()
+    PanelNota.GetClientPos(,,&cw,&ch)
+    AjustarNotaLibre(PanelNota,0,cw,ch)
 }
 
 NotaModificada(*) {
