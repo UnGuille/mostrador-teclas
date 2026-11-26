@@ -336,7 +336,7 @@ y rehacer, **Escritorio / Dibujar**, borrar, ajustes, ocultar y cerrar todo.
 - **Trazo, Flecha, Óvalo, Marco, Línea y Texto** para dibujar, subrayar o señalar un área.
 - **Colores rápidos** y botones **− / +** para cambiar el grosor desde la paleta.
 - **Deshacer y Rehacer**, también después de **Borrar todo**.
-- **Escritorio / Dibujar** para alternar entre manejar las ventanas y anotar.
+- **Mouse**, con icono de cursor: se marca en verde y permite usar la PC sin dibujar, conservando los trazos visibles. Otro clic en Mouse o seleccionar una herramienta vuelve al dibujo. Mientras está activo también se pausa el borrado automático de los trazos.
 - **Esc / X** para ocultar la paleta conservando las marcas; **Cerrar todo** para borrar la sesión y cerrar esa herramienta.
 - **⚙** para elegir cualquier color y modificar la herramienta inicial y la duración.
 

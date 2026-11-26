@@ -161,6 +161,7 @@ global AnotBarraPlegada := false, AnotBotonPlegar := 0, AnotAgarreBarra := 0
 global AnotBarraAbiertaW := 0, AnotBarraAbiertaH := 0, AnotBarraMarcoW := 0
 global AnotBarraMinW := 0, AnotBarraMinH := 0, AnotBarraCambiando := false
 global AnotBarraElementos := []
+global AnotPausaInicio := 0
 global AnotPausa := false, AnotPausaBoton := 0
 global AnotModo := false, AnotLienzo := 0, AnotCaptura := 0, AnotBarra := 0, AnotPic := 0
 global AnotAjustes := 0, AnotCampos := 0, AnotHwndCaptura := 0, AnotBotones := Map()
@@ -4964,6 +4965,7 @@ IniciarAnotaciones(*) {
         if AnotModo
             return
         CrearLienzoAnotaciones()
+        ReanudarTiempoTrazos()
         AnotModo := true, AnotPausa := false
         MostrarCapturaAnotaciones()
         if AnotBarra is Gui {
@@ -5004,6 +5006,7 @@ FinalizarAnotaciones(*) {
             AnotTextoEdicion.vence := AnotDuracion ? A_TickCount + AnotDuracion * 1000 : 0
         AnotTextoEdicion := 0
         LiberarAreaCapturaAnotaciones()
+        ReanudarTiempoTrazos()
         AnotModo := false, AnotPausa := false, AnotActual := 0
         if AnotHwndCaptura && DllCall("GetCapture", "ptr") = AnotHwndCaptura
             DllCall("ReleaseCapture")
@@ -5027,6 +5030,7 @@ AlternarPausaAnotaciones(*) {
 }
 
 PausarAnotaciones(*) {
+    global AnotPausaInicio
     global AnotModo, AnotPausa, AnotActual, AnotCaptura, AnotBarra, AnotHwndCaptura
     global AnotTextoPendiente, AnotTextoEdicion, AnotDuracion, AnotTextoGui
     if AnotTextoGui is Gui {
@@ -5045,6 +5049,7 @@ PausarAnotaciones(*) {
             AnotTextoEdicion.vence := AnotDuracion ? A_TickCount + AnotDuracion * 1000 : 0
         AnotTextoEdicion := 0
         LiberarAreaCapturaAnotaciones()
+        AnotPausaInicio := A_TickCount
         AnotModo := false, AnotPausa := true, AnotActual := 0
         if AnotHwndCaptura && DllCall("GetCapture", "ptr") = AnotHwndCaptura
             DllCall("ReleaseCapture")
@@ -5058,6 +5063,17 @@ PausarAnotaciones(*) {
     } finally {
         Critical criticoAnterior
     }
+}
+
+ReanudarTiempoTrazos() {
+    global AnotPausa, AnotPausaInicio, AnotTrazos
+    if AnotPausa {
+        pausa := Max(0,A_TickCount-AnotPausaInicio)
+        for trazo in AnotTrazos
+            if trazo.vence
+                trazo.vence += pausa
+    }
+    AnotPausaInicio := 0
 }
 
 CrearLienzoAnotaciones() {
@@ -5344,7 +5360,7 @@ CrearBarraAnotaciones() {
     ElementoBarraAnotacion(g, "+", 76, 336, 28, 28, CambiarGrosorAnotacion.Bind(1))
     AnotDeshacerBoton := ElementoBarraAnotacion(g, "↶", 8, 376, 44, 30, DeshacerAnotacion, "232323", "D6D6D6", 20)
     AnotRehacerBoton := ElementoBarraAnotacion(g, "↷", 60, 376, 44, 30, RehacerAnotacion, "232323", "D6D6D6", 20)
-    AnotPausaBoton := ElementoBarraAnotacion(g, "Escritorio", 8, 418, 96, 32, AlternarPausaAnotaciones, "203044", "A9CDFF")
+    AnotPausaBoton := ElementoBarraAnotacion(g, "Mouse", 8, 418, 96, 32, AlternarPausaAnotaciones, "232323", "D6D6D6", 12, "mouse")
     AnotBorrarBoton := ElementoBarraAnotacion(g, "Borrar todo", 8, 462, 96, 30, BorrarAnotaciones, "352126", "FF9AAA")
     ElementoBarraAnotacion(g, "Ajustes", 8, 502, 96, 28, AbrirAjustesAnotaciones)
     ElementoBarraAnotacion(g, "Ocultar", 8, 538, 96, 26, FinalizarAnotaciones, "1D1D1D", "AAAAAA")
@@ -5383,11 +5399,11 @@ CrearBarraAnotaciones() {
 }
 
 PintarIconoHerramientaBarra(d, w, h) {
-    global AnotHerramienta
+    global AnotHerramienta, AnotPausa
     anterior := A_IsCritical
     Critical "On"
     try {
-        activa := d.figura = AnotHerramienta
+        activa := d.figura = "mouse" ? AnotPausa : !AnotPausa && d.figura = AnotHerramienta
         clave := w "|" h "|" activa
         if d.imagenClave = clave
             return
@@ -5406,11 +5422,15 @@ DibujarHerramientaBarra(figura, texto, w, h, activa) {
         s := Min(w / 96, h / 30) * muestra
         fondo := activa ? "45232B" : "232323"
         tinta := activa ? "FF96A8" : "D6D6D6"
+        if figura = "mouse" && activa
+            fondo := "20382D", tinta := "8BE0AD"
         RelojFondo(superficie.dc, superficie.w, superficie.h, "0F0F0F")
         RectTecla(superficie.dc, 0, 0, superficie.w, superficie.h, Round(10 * s), fondo)
         cx := 19 * s, cy := superficie.h / 2
         puntos := []
         switch figura {
+            case "mouse":
+                puntos := [[cx-5*s,cy-8*s],[cx-5*s,cy+6*s],[cx-1*s,cy+2*s],[cx+2*s,cy+8*s],[cx+5*s,cy+7*s],[cx+2*s,cy+1*s],[cx+8*s,cy+1*s],[cx-5*s,cy-8*s]]
             case "trazo":
                 Loop 25 {
                     x := -8 + (A_Index - 1) * 16 / 24
@@ -5524,8 +5544,11 @@ BotonPaletaAnotacion(g, texto, x, y, w, h, accion, fondo := "232323", tinta := "
 }
 
 ElegirHerramientaAnotacion(herramienta, *) {
+    global AnotPausa
     global AnotHerramienta
     AnotHerramienta := herramienta
+    if AnotPausa
+        IniciarAnotaciones()
     ActualizarPaletaAnotaciones()
     GuardarAnotacionesConfig()
 }
@@ -5567,10 +5590,8 @@ ActualizarPaletaAnotaciones() {
         AnotGrosorEtiqueta.Text := AnotHerramienta = "texto" ? "Letra" : "Grosor"
     if IsObject(AnotEstado) {
         nombres := Map("trazo", "Trazo libre", "flecha", "Flecha", "ovalo", "Óvalo", "marco", "Marco", "linea", "Línea", "texto", "Texto · pulsa para escribir")
-        AnotEstado.Text := (AnotPausa ? "Escritorio libre · " : "") nombres[AnotHerramienta] " · " (AnotDuracion ? AnotDuracion " s" : "Borrado manual")
+        AnotEstado.Text := (AnotPausa ? "Mouse activo · " : "") nombres[AnotHerramienta] " · " (AnotDuracion ? AnotDuracion " s" : "Borrado manual")
     }
-    if IsObject(AnotPausaBoton)
-        AnotPausaBoton.Text := AnotPausa ? "Dibujar" : "Escritorio"
     if IsObject(AnotDeshacerBoton)
         AnotDeshacerBoton.Enabled := AnotHistorial.Length > 0 || IsObject(AnotActual) || IsObject(AnotArrastreTexto)
     if IsObject(AnotRehacerBoton)
@@ -5766,6 +5787,8 @@ CursorAnotacion(wParam, lParam, msg, hwnd) {
 ExpirarAnotaciones() {
     global AnotTrazos, AnotActual, AnotModo, AnotHwndCaptura, AnotTextoGui, AnotTextoPendiente, AnotArrastreTexto
     global AnotPausa
+    if AnotPausa
+        return
     criticoAnterior := A_IsCritical
     Critical "On"
     try {
