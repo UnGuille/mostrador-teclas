@@ -156,6 +156,9 @@ global FocoRadio := LeerEnteroClase("RadioFoco", 180, 80, 420)
 global FocoOpacidad := LeerEnteroClase("OpacidadFoco", 55, 15, 80)
 global FocoVirtualX := 0, FocoVirtualY := 0, FocoVirtualW := 0, FocoVirtualH := 0
 global AnotInterfazHwnds := Map(), AnotInterfazRects := []
+global AnotPantallaDibujo := IniRead(ArchivoConfig, "Anotaciones", "PantallaDibujo", "todas")
+global AnotModeloX := 0, AnotModeloY := 0, AnotCambioPantallas := false
+global AnotBotonPantallas := 0, AnotAjustandoPantallas := false
 global AnotAreaClave := "", AnotAreaPendiente := false
 global AnotBarraPlegada := false, AnotBotonPlegar := 0, AnotAgarreBarra := 0
 global AnotBarraAbiertaW := 0, AnotBarraAbiertaH := 0, AnotBarraMarcoW := 0
@@ -211,6 +214,7 @@ try {
     OnMessage(0x0202, SoltarAnotacion)
     OnMessage(0x0204, DerechoAnotacion)
     OnMessage(0x0020, CursorAnotacion)
+    OnMessage(0x02E0, DpiPantallasAnotaciones)
     OnMessage(0x007E, AlCambiarPantallas) ; WM_DISPLAYCHANGE
     OnMessage(0x001A, AlCambiarPantallas) ; WM_SETTINGCHANGE
     OnMessage(0x0047, SeguirPosicionMostrador) ; WM_WINDOWPOSCHANGED
@@ -275,6 +279,7 @@ try {
 <^<!t::AlternarNota()
 <^<!s::AlternarSeleccion()
 <^<!a::AlternarAnotaciones()
+<^<!v::TraerPaletaAnotaciones()
 <^<!x::BorrarAnotaciones()
 <^<!c::AbrirPanelClase()
 <^<!e::AlternarFocoClase()
@@ -287,6 +292,7 @@ Enter::AlternarTemporizadorClase()
 ^Enter::InsertarTextoAnotacion()
 #HotIf AnotModo
 *Esc::FinalizarAnotaciones()
+#HotIf AnotModo && AtajosDibujoEnPantalla()
 ^z::DeshacerAnotacion()
 ^y::RehacerAnotacion()
 Delete::BorrarAnotaciones()
@@ -1198,14 +1204,17 @@ PosicionEnPantalla(x, y, w, h) {
 }
 
 AlCambiarPantallas(wParam, lParam, msg, hwnd) {
-    global CerrandoMostrador
+    global CerrandoMostrador, AnotCambioPantallas, AnotCaptura
     if CerrandoMostrador || (msg = 0x001A && wParam != 0x002F)
         return
-    ; El dibujo usa las coordenadas anteriores de las pantallas.
-    SetTimer(CerrarAnotaciones, -1)
-    ; Esperar a que Windows termine de actualizar la distribución de pantallas.
-    SetTimer(ReubicarMostrador, -300)
-    SetTimer(ActualizarPantallasClase, -350)
+    ConfirmarAnotacionSinMover()
+    AnotCambioPantallas := true
+    if AnotCaptura is Gui
+        AnotCaptura.Hide()
+    ; Esperar a la nueva geometria sin borrar la sesion ni el historial.
+    SetTimer(ActualizarPantallasAnotaciones, -450)
+    SetTimer(ReubicarMostrador, -500)
+    SetTimer(ActualizarPantallasClase, -550)
 }
 
 ReubicarMostrador() {
@@ -3300,6 +3309,7 @@ DibujarIconoBarra(tipo, w, h, color, fondo) {
                 paths := [[[-0.40,0.30],[-0.15,-0.32],[0.10,0.30]],[[-0.30,0.06],[0.00,0.06]],[[0.16,0],[0.42,0]]]
                 if tipo = "letramas"
                     paths.Push([[0.29,-0.13],[0.29,0.13]])
+            case "pantalla": paths := [[[-0.38,-0.28],[0.38,-0.28],[0.38,0.18],[-0.38,0.18],[-0.38,-0.28]],[[0,0.18],[0,0.34]],[[-0.20,0.34],[0.20,0.34]]]
             case "menos": paths := [[[-0.28,0],[0.28,0]]]
             case "nota": paths := [[[-0.30,0.30],[-0.23,0.08],[0.19,-0.34],[0.34,-0.19],[-0.08,0.23],[-0.30,0.30]],[[-0.23,0.08],[-0.08,0.23]]]
             case "trazo": paths := [[[-0.34,-0.27],[-0.13,-0.34],[0.05,-0.22],[-0.13,0.04],[-0.04,0.28],[0.16,0.30],[0.34,0.10]]]
@@ -4046,6 +4056,9 @@ CerrarMostrador(*) {
     CerrarAjustesSeleccion()
     HwndTeclado := 0
     ; Desconectar primero: destruir las ventanas genera mas mensajes de Windows.
+    SetTimer(ActualizarPantallasAnotaciones,0)
+    SetTimer(AjustarPaletaAPantalla,0)
+    OnMessage(0x02E0,DpiPantallasAnotaciones,0)
     OnMessage(0x007E, AlCambiarPantallas, 0)
     OnMessage(0x001A, AlCambiarPantallas, 0)
     OnMessage(0x0047, SeguirPosicionMostrador, 0)
@@ -4951,6 +4964,7 @@ CerrarAjustesSeleccion(*) {
 ; Anotaciones temporales. El lienzo deja pasar los clics; sólo el modo de dibujo
 ; muestra una superficie de captura independiente y una barra de herramientas.
 IniciarAnotaciones(*) {
+    global AnotPantallaDibujo
     global AnotModo, AnotCaptura, AnotBarra, AnotTextoGui, AnotPausa, ClaseGui
     ; Cerrar el panel libera espacio y evita que sus campos compartan atajos de dibujo.
     if ClaseGui is Gui
@@ -4964,6 +4978,7 @@ IniciarAnotaciones(*) {
     try {
         if AnotModo
             return
+        contextoDpi := PixelesAnotaciones()
         CrearLienzoAnotaciones()
         ReanudarTiempoTrazos()
         AnotModo := true, AnotPausa := false
@@ -4971,12 +4986,15 @@ IniciarAnotaciones(*) {
         if AnotBarra is Gui {
             ActualizarPaletaAnotaciones()
             AnotBarra.Show("NoActivate")
+            AjustarPaletaAPantalla()
         } else {
             CrearBarraAnotaciones()
         }
         ActualizarAreaCapturaAnotaciones()
         ReordenarCapasMostrador()
         A_TrayMenu.Check("Anotar pantalla  (Ctrl+Alt+A)")
+        if AnotPantallaDibujo != "todas" && !IsObject(PantallaPorNombreAnotaciones(AnotPantallaDibujo))
+            PausarAnotaciones()
     } catch as err {
         CerrarAnotaciones()
         MsgBox("No se pudo abrir el modo de anotación: " err.Message, "Anotaciones")
@@ -5078,11 +5096,13 @@ ReanudarTiempoTrazos() {
 
 CrearLienzoAnotaciones() {
     global AnotLienzo, AnotCaptura, AnotHwndCaptura, AnotPic, AnotDC, AnotBitmap
-    global AnotX, AnotY, AnotW, AnotH, AnotClave
+    global AnotX, AnotY, AnotW, AnotH, AnotClave, AnotModeloX, AnotModeloY
+    contextoDpi := PixelesAnotaciones()
     if AnotLienzo is Gui
         return
     AnotX := SysGet(76), AnotY := SysGet(77)
     AnotW := SysGet(78), AnotH := SysGet(79)
+    AnotModeloX := AnotX, AnotModeloY := AnotY
     pantalla := DllCall("GetDC", "ptr", 0, "ptr")
     try {
         AnotDC := DllCall("CreateCompatibleDC", "ptr", pantalla, "ptr")
@@ -5136,6 +5156,7 @@ ProgramarAreaCapturaAnotaciones(wParam, lParam, msg, hwnd) {
 }
 
 ActualizarAreaCapturaAnotaciones() {
+    contextoDpi := PixelesAnotaciones()
     global AnotModo, AnotCaptura, AnotHwndCaptura, AnotX, AnotY, AnotW, AnotH
     global AnotInterfazHwnds, AnotInterfazRects, AnotAreaClave, AnotAreaPendiente, CerrandoMostrador
     criticoAnterior := A_IsCritical
@@ -5147,7 +5168,10 @@ ActualizarAreaCapturaAnotaciones() {
             return false
         if HwndGuiMostrador(AnotCaptura) != AnotHwndCaptura || AnotW < 1 || AnotH < 1
             return false
+        limites := LimitesDibujoAnotaciones()
         ventanas := Map(), rectangulos := [], clave := AnotX "," AnotY "," AnotW "," AnotH
+        for valor in limites
+            clave .= "," valor
         for g in VentanasInterfazAnotacion() {
             hwnd := HwndGuiMostrador(g, true)
             if !hwnd || ventanas.Has(hwnd)
@@ -5167,7 +5191,7 @@ ActualizarAreaCapturaAnotaciones() {
         AnotInterfazHwnds := ventanas, AnotInterfazRects := rectangulos
         if clave = AnotAreaClave
             return true
-        region := DllCall("CreateRectRgn", "int", 0, "int", 0, "int", AnotW, "int", AnotH, "ptr")
+        region := DllCall("CreateRectRgn", "int", limites[1]-AnotX, "int", limites[2]-AnotY, "int", limites[3]-AnotX, "int", limites[4]-AnotY, "ptr")
         if !region
             return false
         try {
@@ -5196,6 +5220,7 @@ ActualizarAreaCapturaAnotaciones() {
 }
 
 PunteroEnInterfazAnotacion() {
+    contextoDpi := PixelesAnotaciones()
     global AnotInterfazRects, AnotAreaPendiente
     if AnotAreaPendiente
         ActualizarAreaCapturaAnotaciones()
@@ -5203,6 +5228,9 @@ PunteroEnInterfazAnotacion() {
     if !DllCall("GetCursorPos", "ptr", punto)
         return false
     x := NumGet(punto, 0, "int"), y := NumGet(punto, 4, "int")
+    limites := LimitesDibujoAnotaciones()
+    if x < limites[1] || x >= limites[3] || y < limites[2] || y >= limites[4]
+        return true
     for rect in AnotInterfazRects
         if x >= rect[1] && x < rect[3] && y >= rect[2] && y < rect[4]
             return true
@@ -5247,6 +5275,7 @@ FlechaInterfazAnotacion() {
 }
 
 MostrarCapturaAnotaciones() {
+    contextoDpi := PixelesAnotaciones()
     global AnotCaptura, AnotX, AnotY, AnotW, AnotH
     ActualizarAreaCapturaAnotaciones()
     AnotCaptura.Show(Format("x{} y{} w{} h{} NoActivate", AnotX, AnotY, AnotW, AnotH))
@@ -5254,6 +5283,7 @@ MostrarCapturaAnotaciones() {
 }
 
 AlternarBarraAnotacionesPlegada(*) {
+    contextoDpi := PixelesAnotaciones()
     global AnotBarra, AnotBarraPlegada, AnotBarraAbiertaW, AnotBarraAbiertaH, AnotBarraMarcoW
     global AnotBarraMinW, AnotBarraMinH, AnotBotonPlegar, CerrandoMostrador, AnotBarraCambiando, AnotBarraElementos
     if CerrandoMostrador || !(AnotBarra is Gui)
@@ -5334,6 +5364,8 @@ AjustarControlesBarraPlegada(ancho, alto) {
 }
 
 CrearBarraAnotaciones() {
+    contextoDpi := PixelesAnotaciones()
+    global AnotBotonPantallas
     global AnotBarraPlegada, AnotBotonPlegar, AnotAgarreBarra, AnotBarraMinW, AnotBarraMinH
     global AnotBarra, AnotBotones, AnotColores, AnotArrastre, AnotEstado, AnotBarraElementos
     global AnotGrosorTexto, AnotGrosorEtiqueta, AnotDeshacerBoton, AnotRehacerBoton, AnotBorrarBoton, AnotPausaBoton, ArchivoConfig
@@ -5347,8 +5379,9 @@ CrearBarraAnotaciones() {
     AnotBarra := g
     g.BackColor := "0F0F0F"
     g.MarginX := 0, g.MarginY := 0
-    AnotAgarreBarra := ElementoBarraAnotacion(g, "···", 8, 4, 64, 24, 0, "0F0F0F", "909090", 20)
+    AnotAgarreBarra := ElementoBarraAnotacion(g, "···", 8, 4, 32, 24, 0, "0F0F0F", "909090", 20)
     AnotArrastre[AnotAgarreBarra.Hwnd] := true
+    AnotBotonPantallas := ElementoBarraAnotacion(g, "", 44, 4, 28, 24, MenuPantallasAnotaciones, "232323", "D6D6D6", 12, "pantalla")
     AnotBotonPlegar := ElementoBarraAnotacion(g, "−", 80, 4, 24, 24, AlternarBarraAnotacionesPlegada, "232323", "D6D6D6", 16)
     for i, herramienta in [["Trazo", "trazo"], ["Flecha", "flecha"], ["Óvalo", "ovalo"], ["Marco", "marco"], ["Línea", "linea"], ["Texto", "texto"]]
         AnotBotones[herramienta[2]] := ElementoBarraAnotacion(g, herramienta[1], 8, 34 + (i - 1) * 34, 96, 30, ElegirHerramientaAnotacion.Bind(herramienta[2]), "232323", "D6D6D6", 12, herramienta[2])
@@ -5375,6 +5408,17 @@ CrearBarraAnotaciones() {
     } else {
         MonitorGetWorkArea(MonitorGetPrimary(), &l, &t, &r, &b)
     }
+    x := IniRead(ArchivoConfig, "Anotaciones", "BarraX", "")
+    y := IniRead(ArchivoConfig, "Anotaciones", "BarraY", "")
+    ; Restaurar el tamano con el monitor que contiene la posicion guardada.
+    if IsInteger(x) && IsInteger(y) {
+        for p in ListarPantallasAnotaciones() {
+            if Integer(x) >= p.l && Integer(x) < p.r && Integer(y) >= p.t && Integer(y) < p.b {
+                l := p.wl, t := p.wt, r := p.wr, b := p.wb
+                break
+            }
+        }
+    }
     dpi := A_ScreenDPI / 96
     ajuste := Min(dpi, (b - t - 32) / 608)
     ancho := IniRead(ArchivoConfig, "Anotaciones", "BarraAncho", "")
@@ -5389,11 +5433,13 @@ CrearBarraAnotaciones() {
     g.Opt("+MinSize" AnotBarraMinW "x" AnotBarraMinH)
     g.OnEvent("Size", AjustarBarraAnotaciones)
     g.OnEvent("Close", FinalizarAnotaciones)
+    g.OnEvent("ContextMenu", MenuPantallasAnotaciones)
     AplicarTemaAjustes(g)
     g.Show(Format("x{} y{} w{} h{} NoActivate", pos[1], pos[2], w, h))
     g.GetClientPos(, , &cw, &ch)
     AjustarBarraAnotaciones(g, 0, cw, ch)
     ActualizarPaletaAnotaciones()
+    AjustarPaletaAPantalla()
     ActualizarAreaCapturaAnotaciones()
     ReordenarCapasMostrador()
 }
@@ -5416,6 +5462,8 @@ PintarIconoHerramientaBarra(d, w, h) {
 }
 
 DibujarHerramientaBarra(figura, texto, w, h, activa) {
+    if figura = "pantalla"
+        return DibujarIconoBarra("pantalla",w,h,"CDD1D6","232323")
     muestra := 3
     superficie := RelojCrearSuperficie(w * muestra, h * muestra)
     try {
@@ -5473,6 +5521,7 @@ ElementoBarraAnotacion(g, texto, x, y, w, h, accion := 0, fondo := "232323", tin
 }
 
 AjustarBarraAnotaciones(g, minmax, ancho, alto) {
+    contextoDpi := PixelesAnotaciones()
     global AnotBarra, AnotBarraElementos, CerrandoMostrador, AnotBarraPlegada, AnotBarraCambiando
     if CerrandoMostrador || AnotBarraCambiando || minmax = -1 || !(AnotBarra is Gui) || g.Hwnd != AnotBarra.Hwnd
         return
@@ -5515,10 +5564,12 @@ AnotModoActivoBarra() {
 }
 
 GuardarGeometriaBarraAnotaciones(wParam, lParam, msg, hwnd) {
+    contextoDpi := PixelesAnotaciones()
     global AnotBarraPlegada, AnotBarraAbiertaW, AnotBarraAbiertaH, AnotBarraMarcoW
     global AnotBarra, ArchivoConfig, CerrandoMostrador
     if CerrandoMostrador || !(AnotBarra is Gui) || hwnd != AnotBarra.Hwnd
         return
+    AjustarPaletaAPantalla()
     AnotBarra.GetPos(&x, &y, &totalW, &totalH)
     pos := PosicionEnPantalla(x, y, totalW, totalH)
     x := pos[1], y := pos[2]
@@ -5527,6 +5578,8 @@ GuardarGeometriaBarraAnotaciones(wParam, lParam, msg, hwnd) {
     if AnotBarraPlegada {
         x += totalW - AnotBarraAbiertaW - AnotBarraMarcoW
         w := AnotBarraAbiertaW, h := AnotBarraAbiertaH
+        abierta := GeometriaPaletaEnPantalla(x,y,w+AnotBarraMarcoW,h+16,PantallaPaletaAnotaciones())
+        x := abierta[1], y := abierta[2]
     }
     dpi := A_ScreenDPI / 96
     for clave, valor in Map("BarraX", x, "BarraY", y, "BarraAncho", Round(w / dpi, 2), "BarraAlto", Round(h / dpi, 2))
@@ -5571,6 +5624,7 @@ CambiarGrosorAnotacion(delta, *) {
 }
 
 ActualizarPaletaAnotaciones() {
+    contextoDpi := PixelesAnotaciones()
     global AnotBarraElementos
     global AnotBotones, AnotColores, AnotHerramienta, AnotColor, AnotEstado, AnotDuracion, AnotGrosor
     global AnotPausa, AnotPausaBoton
@@ -5663,15 +5717,18 @@ BorrarAnotaciones(*) {
 
 
 PuntoAnotacion() {
-    global AnotX, AnotY
+    global AnotModeloX, AnotModeloY
+    contextoDpi := PixelesAnotaciones()
     punto := Buffer(8, 0)
     DllCall("GetCursorPos", "ptr", punto)
-    return [NumGet(punto, 0, "int") - AnotX, NumGet(punto, 4, "int") - AnotY]
+    return [NumGet(punto, 0, "int") - AnotModeloX, NumGet(punto, 4, "int") - AnotModeloY]
 }
 
 PresionarAnotacion(wParam, lParam, msg, hwnd) {
     global AnotModo, AnotHwndCaptura, AnotActual, AnotHerramienta, AnotColor, AnotGrosor, AnotBarra, AnotArrastre
-    global AnotTextoPunto, AnotTextoPendiente, AnotPausa
+    global AnotTextoPunto, AnotTextoPendiente, AnotPausa, AnotCambioPantallas
+    if AnotCambioPantallas
+        return
     criticoAnterior := A_IsCritical
     Critical "On"
     try {
@@ -5707,6 +5764,9 @@ PresionarAnotacion(wParam, lParam, msg, hwnd) {
 
 MoverAnotacion(wParam, lParam, msg, hwnd) {
     global AnotModo, AnotHwndCaptura, AnotActual, AnotArrastreTexto
+    global AnotCambioPantallas
+    if AnotCambioPantallas
+        return
     criticoAnterior := A_IsCritical
     Critical "On"
     try {
@@ -5743,6 +5803,9 @@ MoverAnotacion(wParam, lParam, msg, hwnd) {
 
 SoltarAnotacion(wParam, lParam, msg, hwnd) {
     global AnotHwndCaptura, AnotActual, AnotTrazos, AnotDuracion, AnotArrastreTexto
+    global AnotCambioPantallas
+    if AnotCambioPantallas
+        return
     criticoAnterior := A_IsCritical
     Critical "On"
     try {
@@ -5829,6 +5892,7 @@ SolicitarPintadoAnotaciones() {
 }
 
 PintarAnotaciones() {
+    global AnotX, AnotY, AnotModeloX, AnotModeloY
     global AnotPendiente, AnotLienzo, AnotPic, AnotDC, AnotBitmap, AnotW, AnotH
     global AnotClave, AnotTrazos, AnotActual, AnotColor, AnotModo, AnotTextoSeleccionado
     criticoAnterior := A_IsCritical
@@ -5854,10 +5918,12 @@ PintarAnotaciones() {
         }
         anterior := DllCall("SelectObject", "ptr", AnotDC, "ptr", AnotBitmap, "ptr")
         pincel := DllCall("CreateSolidBrush", "uint", BGR(AnotClave), "ptr")
+        viewport := Buffer(8,0)
         try {
             rect := Buffer(16, 0)
             NumPut("int", AnotW, rect, 8), NumPut("int", AnotH, rect, 12)
             DllCall("FillRect", "ptr", AnotDC, "ptr", rect, "ptr", pincel)
+            DllCall("SetViewportOrgEx","ptr",AnotDC,"int",AnotModeloX-AnotX,"int",AnotModeloY-AnotY,"ptr",viewport)
             for trazo in AnotTrazos
                 PintarTrazoAnotacion(AnotDC, trazo)
             if IsObject(AnotActual)
@@ -5865,6 +5931,7 @@ PintarAnotaciones() {
             if AnotModo && IndiceTextoAnotacion(AnotTextoSeleccionado)
                 PintarSeleccionTextoAnotacion(AnotDC, AnotTextoSeleccionado)
         } finally {
+            DllCall("SetViewportOrgEx","ptr",AnotDC,"int",NumGet(viewport,0,"int"),"int",NumGet(viewport,4,"int"),"ptr",0)
             DllCall("DeleteObject", "ptr", pincel)
             DllCall("SelectObject", "ptr", AnotDC, "ptr", anterior)
         }
@@ -6045,8 +6112,9 @@ EditorTextoAnotacionActivo() {
 }
 
 AbrirTextoAnotacion() {
+    contextoDpi := PixelesAnotaciones()
     global AnotTextoPendiente, AnotTextoPunto, AnotTextoGui, AnotTextoCampos, AnotModo
-    global AnotTextoTam, AnotTextoNegrita, AnotColor, AnotX, AnotY, AnotTextoEdicion
+    global AnotTextoTam, AnotTextoNegrita, AnotColor, AnotModeloX, AnotModeloY, AnotTextoEdicion
     if !AnotTextoPendiente || !AnotModo
         return
     if GetKeyState("LButton", "P") {
@@ -6091,7 +6159,7 @@ AbrirTextoAnotacion() {
         ancho := Round(440 * escala), alto := Round(252 * escala)
         AplicarTemaAjustes(g)
         RedondearNota(g, ancho, alto, Round(12 * escala))
-        pos := PosicionEnPantalla(AnotX + AnotTextoPunto[1], AnotY + AnotTextoPunto[2], ancho, alto)
+        pos := PosicionEnPantalla(AnotModeloX + AnotTextoPunto[1], AnotModeloY + AnotTextoPunto[2], ancho, alto)
         MostrarDialogoMostrador(g, Format("x{} y{} w{} h{}", pos[1], pos[2], ancho, alto))
         texto.Focus()
         SendMessage(0xB1, -1, -1, texto)
@@ -6180,8 +6248,9 @@ FuenteTextoAnotacion(trazo) {
 }
 
 PrepararTextoAnotacion(trazo) {
-    global AnotX, AnotY
-    x := AnotX + trazo.puntos[1][1], y := AnotY + trazo.puntos[1][2]
+    global AnotModeloX, AnotModeloY
+    contextoDpi := PixelesAnotaciones()
+    x := AnotModeloX + trazo.puntos[1][1], y := AnotModeloY + trazo.puntos[1][2]
     punto := Buffer(8, 0)
     NumPut("int", x, "int", y, punto)
     monitor := DllCall("MonitorFromPoint", "int64", NumGet(punto, 0, "int64"), "uint", 2, "ptr")
@@ -6204,8 +6273,8 @@ PrepararTextoAnotacion(trazo) {
         DllCall("DrawTextW", "ptr", dc, "str", trazo.texto, "int", -1, "ptr", rect, "uint", 0xC50)
         trazo.ancho := Max(1, Min(maxW, NumGet(rect, 8, "int") + 2))
         trazo.alto := Max(1, NumGet(rect, 12, "int") + 2)
-        trazo.puntos[1] := [Max(l + margen, Min(x, r - trazo.ancho - margen)) - AnotX,
-            Max(t + margen, Min(y, b - trazo.alto - margen)) - AnotY]
+        trazo.puntos[1] := [Max(l + margen, Min(x, r - trazo.ancho - margen)) - AnotModeloX,
+            Max(t + margen, Min(y, b - trazo.alto - margen)) - AnotModeloY]
     } finally {
         DllCall("SelectObject", "ptr", dc, "ptr", previa)
         DllCall("DeleteObject", "ptr", fuente)
@@ -6300,6 +6369,7 @@ IniciarInteraccionTextoAnotacion(msg) {
 }
 
 MoverTextoAnotacion() {
+    global AnotX, AnotY, AnotModeloX, AnotModeloY
     global AnotArrastreTexto, AnotTextoSeleccionado, AnotTrazos, AnotW, AnotH
     if !IsObject(AnotArrastreTexto)
         return
@@ -6313,8 +6383,8 @@ MoverTextoAnotacion() {
     if !indice
         return
     ; La copia evita modificar los objetos guardados en el historial de deshacer.
-    movimiento.copia.puntos[1] := [Max(0, Min(movimiento.origen[1] + dx, AnotW - movimiento.copia.ancho)),
-        Max(0, Min(movimiento.origen[2] + dy, AnotH - movimiento.copia.alto))]
+    movimiento.copia.puntos[1] := [Max(AnotX-AnotModeloX, Min(movimiento.origen[1] + dx, AnotX-AnotModeloX+AnotW - movimiento.copia.ancho)),
+        Max(AnotY-AnotModeloY, Min(movimiento.origen[2] + dy, AnotY-AnotModeloY+AnotH - movimiento.copia.alto))]
     AnotTrazos[indice] := movimiento.copia
     movimiento.movido := true
     AnotTextoSeleccionado := movimiento.copia
@@ -6392,4 +6462,274 @@ PintarSeleccionTextoAnotacion(dc, trazo) {
         DllCall("SelectObject", "ptr", dc, "ptr", previo)
         DllCall("DeleteObject", "ptr", lapiz)
     }
+}
+
+; Helpers de geometria para la paleta. No crean ventanas ni modifican trazos.
+
+ListarPantallasAnotaciones() {
+    contextoDpi := PixelesAnotaciones()
+    pantallas := []
+    principal := MonitorGetPrimary()
+    Loop MonitorGetCount() {
+        indice := A_Index
+        MonitorGet(indice, &l, &t, &r, &b)
+        MonitorGetWorkArea(indice, &wl, &wt, &wr, &wb)
+        pantallas.Push({nombre: MonitorGetName(indice), indice: indice,
+            l: l, t: t, r: r, b: b, wl: wl, wt: wt, wr: wr, wb: wb,
+            principal: indice = principal})
+    }
+    return pantallas
+}
+
+GeometriaPaletaEnPantalla(x, y, w, h, pantalla, margen := 12) {
+    ; Todas las medidas comparten coordenadas de pantalla, incluso si son negativas.
+    areaW := Max(1, pantalla.wr - pantalla.wl)
+    areaH := Max(1, pantalla.wb - pantalla.wt)
+    margenX := Min(Max(0, Round(margen)), Floor((areaW - 1) / 2))
+    margenY := Min(Max(0, Round(margen)), Floor((areaH - 1) / 2))
+    l := pantalla.wl + margenX, t := pantalla.wt + margenY
+    r := pantalla.wr - margenX, b := pantalla.wb - margenY
+    w := Max(1, Round(w)), h := Max(1, Round(h))
+    factor := Min(1.0, (r - l) / w, (b - t) / h)
+    w := Max(1, Floor(w * factor)), h := Max(1, Floor(h * factor))
+    return [Max(l, Min(Round(x), r - w)), Max(t, Min(Round(y), b - h)), w, h]
+}
+
+PantallaPorNombreAnotaciones(nombre, pantallas := unset) {
+    if !IsSet(pantallas)
+        pantallas := ListarPantallasAnotaciones()
+    for pantalla in pantallas
+        if StrCompare(pantalla.nombre, nombre, false) = 0
+            return pantalla
+    return 0
+}
+
+
+; Las superficies de dibujo usan pixeles fisicos, incluso con escalas distintas.
+PixelesAnotaciones() => ContextoPixelesAnotaciones()
+
+class ContextoPixelesAnotaciones {
+    __New() {
+        this.anterior := 0
+        try this.anterior := DllCall("SetThreadDpiAwarenessContext","ptr",-3,"ptr")
+    }
+    __Delete() {
+        if this.anterior
+            DllCall("SetThreadDpiAwarenessContext","ptr",this.anterior,"ptr")
+    }
+}
+
+PantallaCursorAnotaciones() {
+    contextoDpi := PixelesAnotaciones()
+    punto := Buffer(8,0)
+    DllCall("GetCursorPos","ptr",punto)
+    x := NumGet(punto,0,"int"), y := NumGet(punto,4,"int")
+    pantallas := ListarPantallasAnotaciones()
+    for p in pantallas
+        if x >= p.l && x < p.r && y >= p.t && y < p.b
+            return p
+    return pantallas[1]
+}
+
+PantallaPaletaAnotaciones() {
+    global AnotBarra
+    contextoDpi := PixelesAnotaciones()
+    if !(AnotBarra is Gui)
+        return PantallaCursorAnotaciones()
+    AnotBarra.GetPos(&x,&y,&w,&h)
+    mejor := 0, area := -1
+    for p in ListarPantallasAnotaciones() {
+        inter := Max(0,Min(x+w,p.r)-Max(x,p.l))*Max(0,Min(y+h,p.b)-Max(y,p.t))
+        if inter > area
+            mejor := p, area := inter
+    }
+    return area > 0 ? mejor : PantallaCursorAnotaciones()
+}
+
+LimitesDibujoAnotaciones(pantallas := unset) {
+    global AnotPantallaDibujo, AnotX, AnotY, AnotW, AnotH
+    if AnotPantallaDibujo = "todas"
+        return [AnotX,AnotY,AnotX+AnotW,AnotY+AnotH]
+    if !IsSet(pantallas)
+        pantallas := ListarPantallasAnotaciones()
+    p := PantallaPorNombreAnotaciones(AnotPantallaDibujo,pantallas)
+    ; Si se desconecta el proyector no bloquear las otras pantallas por sorpresa.
+    if !IsObject(p)
+        p := pantallas[1]
+    return [p.l,p.t,p.r,p.b]
+}
+
+ElegirPantallaDibujo(nombre, *) {
+    global AnotPantallaDibujo, ArchivoConfig, AnotAreaClave
+    ConfirmarAnotacionSinMover()
+    AnotPantallaDibujo := nombre
+    IniWrite(nombre,ArchivoConfig,"Anotaciones","PantallaDibujo")
+    AnotAreaClave := ""
+    ActualizarAreaCapturaAnotaciones()
+}
+
+MenuPantallasAnotaciones(*) {
+    global AnotPantallaDibujo
+    menu := Menu(), mover := Menu(), dibujar := Menu()
+    menu.Add("Traer panel a esta pantalla  (Ctrl+Alt+V)",TraerPaletaAnotaciones)
+    dibujar.Add("Todas las pantallas",ElegirPantallaDibujo.Bind("todas"))
+    if AnotPantallaDibujo = "todas"
+        dibujar.Check("Todas las pantallas")
+    if AnotPantallaDibujo != "todas" && !IsObject(PantallaPorNombreAnotaciones(AnotPantallaDibujo)) {
+        menu.Add("Pantalla de dibujo desconectada · Mouse activo",(*) => 0)
+        menu.Disable("Pantalla de dibujo desconectada · Mouse activo")
+    }
+    actual := PantallaPaletaAnotaciones()
+    for p in ListarPantallasAnotaciones() {
+        etiqueta := "Pantalla " p.indice " · " (p.r-p.l) " × " (p.b-p.t) (p.principal ? " · principal" : "")
+        mover.Add(etiqueta,MoverPaletaAPantalla.Bind(p.nombre))
+        if p.nombre = actual.nombre
+            mover.Check(etiqueta)
+        dibujar.Add(etiqueta,ElegirPantallaDibujo.Bind(p.nombre))
+        if p.nombre = AnotPantallaDibujo
+            dibujar.Check(etiqueta)
+    }
+    menu.Add("Mover panel a",mover)
+    menu.Add("Dibujar en",dibujar)
+    menu.Show()
+}
+
+TraerPaletaAnotaciones(*) {
+    global AnotBarra
+    contextoDpi := PixelesAnotaciones()
+    destino := PantallaCursorAnotaciones()
+    if !HwndGuiMostrador(AnotBarra,true)
+        IniciarAnotaciones()
+    if AnotBarra is Gui {
+        AjustarPaletaAPantalla(destino)
+        AnotBarra.Show("NoActivate")
+        GuardarGeometriaBarraAnotaciones(0,0,0,AnotBarra.Hwnd)
+    }
+}
+
+MoverPaletaAPantalla(nombre, *) {
+    global AnotBarra
+    p := PantallaPorNombreAnotaciones(nombre)
+    if !IsObject(p) || !(AnotBarra is Gui)
+        return
+    AjustarPaletaAPantalla(p)
+    GuardarGeometriaBarraAnotaciones(0,0,0,AnotBarra.Hwnd)
+}
+
+AjustarPaletaAPantalla(destino := unset) {
+    global AnotBarra, AnotBarraPlegada, AnotBarraAbiertaW, AnotBarraAbiertaH, AnotBarraMarcoW
+    global AnotBarraMinW, AnotBarraMinH, AnotAjustandoPantallas, AnotBarraCambiando
+    if !(AnotBarra is Gui) || AnotAjustandoPantallas || AnotBarraCambiando
+        return
+    contextoDpi := PixelesAnotaciones()
+    AnotAjustandoPantallas := true
+    try {
+        AnotBarra.GetPos(&x,&y,&w,&h)
+        ox := x, oy := y, ow := w, oh := h
+        if IsSet(destino) && IsObject(destino) {
+            p := destino
+            x := p.wr-w-12, y := p.wt+(p.wb-p.wt-h)//2
+        } else
+            p := PantallaPaletaAnotaciones()
+        geo := GeometriaPaletaEnPantalla(x,y,w,h,p)
+        if AnotBarraPlegada && AnotBarraAbiertaW > 0 {
+            abierta := GeometriaPaletaEnPantalla(x,y,AnotBarraAbiertaW+AnotBarraMarcoW,AnotBarraAbiertaH+16,p)
+            AnotBarraAbiertaW := Max(1,abierta[3]-AnotBarraMarcoW)
+            AnotBarraAbiertaH := Max(1,abierta[4]-16)
+        }
+        if ox != geo[1] || oy != geo[2] || ow != geo[3] || oh != geo[4] {
+            AnotBarra.Opt("+MinSize1x1")
+            DllCall("SetWindowPos","ptr",AnotBarra.Hwnd,"ptr",0,"int",geo[1],"int",geo[2],"int",geo[3],"int",geo[4],"uint",0x14)
+        }
+        AnotBarra.GetClientPos(,,&cw,&ch)
+        if !AnotBarraPlegada
+            AnotBarra.Opt("+MinSize" Min(AnotBarraMinW,cw) "x" Min(AnotBarraMinH,ch))
+        AjustarBarraAnotaciones(AnotBarra,0,cw,ch)
+        ActualizarAreaCapturaAnotaciones()
+    } finally {
+        AnotAjustandoPantallas := false
+    }
+}
+
+DpiPantallasAnotaciones(wParam,lParam,msg,hwnd) {
+    global AnotLienzo, AnotCaptura, AnotBarra
+    if hwnd = HwndGuiMostrador(AnotLienzo) || hwnd = HwndGuiMostrador(AnotCaptura) {
+        SetTimer(ActualizarPantallasAnotaciones,-150)
+        return 0
+    }
+    if hwnd = HwndGuiMostrador(AnotBarra) {
+        SetTimer(AjustarPaletaAPantalla,-50)
+        return 0
+    }
+}
+
+ActualizarPantallasAnotaciones() {
+    global AnotPantallaDibujo
+    global CerrandoMostrador, AnotCambioPantallas, AnotLienzo, AnotModo, AnotBarra, AnotCaptura
+    if CerrandoMostrador
+        return
+    contextoDpi := PixelesAnotaciones()
+    try {
+        if AnotPantallaDibujo != "todas" && !IsObject(PantallaPorNombreAnotaciones(AnotPantallaDibujo)) && AnotModo
+            PausarAnotaciones()
+        if AnotLienzo is Gui
+            RedimensionarLienzoAnotaciones(SysGet(76),SysGet(77),SysGet(78),SysGet(79))
+        if AnotBarra is Gui
+            AjustarPaletaAPantalla()
+    } catch as err {
+        ; Mantener los dibujos y dejar libre el escritorio si no se pudo ampliar el lienzo.
+        if AnotModo
+            PausarAnotaciones()
+        AgregarAlHistorial("Pantallas: dibujo pausado; vuelve a abrir la paleta")
+    } finally {
+        AnotCambioPantallas := false
+    }
+}
+
+RedimensionarLienzoAnotaciones(x,y,w,h) {
+    global AnotLienzo, AnotCaptura, AnotPic, AnotDC, AnotBitmap, AnotX, AnotY, AnotW, AnotH
+    global AnotModo, AnotModeloX, AnotModeloY, AnotAreaClave
+    contextoDpi := PixelesAnotaciones()
+    if !(AnotLienzo is Gui) || w < 1 || h < 1
+        return false
+    ConfirmarAnotacionSinMover()
+    if w != AnotW || h != AnotH {
+        pantalla := DllCall("GetDC","ptr",0,"ptr")
+        try nuevoBmp := DllCall("CreateCompatibleBitmap","ptr",pantalla,"int",w,"int",h,"ptr")
+        finally DllCall("ReleaseDC","ptr",0,"ptr",pantalla)
+        if !nuevoBmp
+            throw Error("No se pudo ampliar el lienzo")
+        anteriorBmp := AnotBitmap
+        AnotBitmap := nuevoBmp
+    } else
+        anteriorBmp := 0
+    AnotCaptura.Hide()
+    try {
+        AnotX := x, AnotY := y, AnotW := w, AnotH := h
+        AnotPic.Move(0,0,w,h)
+        DllCall("SetWindowPos","ptr",AnotLienzo.Hwnd,"ptr",0,"int",x,"int",y,"int",w,"int",h,"uint",0x14)
+        DllCall("SetWindowPos","ptr",AnotCaptura.Hwnd,"ptr",0,"int",x,"int",y,"int",w,"int",h,"uint",0x14)
+        PintarAnotaciones()
+    } finally {
+        if anteriorBmp
+            DllCall("DeleteObject","ptr",anteriorBmp)
+    }
+    AnotAreaClave := ""
+    if AnotModo
+        MostrarCapturaAnotaciones()
+    ReordenarCapasMostrador()
+    return true
+}
+
+
+PuntoEnLimitesDibujoAnotaciones(x,y,limites) {
+    return x >= limites[1] && x < limites[3] && y >= limites[2] && y < limites[4]
+}
+
+AtajosDibujoEnPantalla() {
+    contextoDpi := PixelesAnotaciones()
+    punto := Buffer(8,0)
+    if !DllCall("GetCursorPos","ptr",punto)
+        return false
+    return PuntoEnLimitesDibujoAnotaciones(NumGet(punto,0,"int"),NumGet(punto,4,"int"),LimitesDibujoAnotaciones())
 }

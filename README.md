@@ -190,6 +190,7 @@ Usa **Ctrl y Alt del lado izquierdo**, para evitar conflictos con Alt Gr.
 | `Ctrl + Alt + M` | Activar / desactivar el resplandor del cursor |
 | `Ctrl + Alt + S` | Activar / desactivar resaltado de selección |
 | `Ctrl + Alt + A` | Entrar / salir del modo de anotaciones |
+| `Ctrl + Alt + V` | Traer la paleta de dibujo a la pantalla del cursor |
 | `Ctrl + Alt + X` | Borrar todas las anotaciones |
 | `Ctrl + Alt + C` | Abrir el panel de clase |
 | `Ctrl + Alt + E` | Activar / desactivar el foco del cursor |
@@ -391,16 +392,30 @@ solas. La elección se guarda: `[Anotaciones] BorradoManual=1` activa el borrado
 manual y `BorradoManual=0` usa `DuracionSeg`. Las configuraciones anteriores que
 no tengan esta preferencia pasan al borrado manual, aunque guardaran ocho segundos.
 
-Las anotaciones están en memoria: cerrar el programa, reiniciarlo o cambiar la
-distribución de pantallas las elimina. Este modo conserva lo escrito durante la
+Las anotaciones están en memoria: cerrar el programa o reiniciarlo las elimina.
+Cambiar la distribución o resolución de las pantallas conserva la sesión y su historial. Este modo conserva lo escrito durante la
 sesión; no guarda los dibujos en un archivo. Deshacer, rehacer, mover o editar
 textos mantiene el borrado manual cuando está elegido.
 
 Las preferencias se guardan en `[Anotaciones]` de `overlay-config.ini`. Los dibujos
-y su historial permanecen en memoria. Al cerrar el programa o cambiar la distribución
-de pantallas se borran. El modo funciona también con el teclado minimizado y cubre
+y su historial permanecen en memoria. Al cerrar el programa se borran. Los cambios de pantallas conservan la sesión. El modo funciona también con el teclado minimizado y cubre
 las pantallas conectadas.
 
+
+### Dos monitores y proyector
+
+El botón de **monitor** en la cabecera de la paleta abre dos opciones independientes:
+
+- **Mover panel a → Pantalla…** lleva sólo la paleta al monitor elegido. Su tamaño se reduce si hace falta para que todos los controles quepan. También funciona con la paleta plegada.
+- **Dibujar en → Pantalla…** limita el dibujo a esa pantalla y deja pasar los clics en las demás. **Todas las pantallas** recupera el lienzo completo. La elección queda guardada.
+
+**Ctrl izquierdo + Alt izquierdo + V** recupera la paleta en la pantalla donde está el cursor. También puedes hacer clic derecho sobre la paleta para abrir el menú de pantallas.
+
+Al elegir una sola pantalla, los atajos de herramientas (`1` a `6`, `Ctrl+Z`, `Ctrl+Y` y `Supr`) sólo actúan sobre el dibujo mientras el cursor está en esa pantalla. `Esc` sigue ocultando la paleta. Para usar libremente toda la PC, pulsa **Mouse**.
+
+Cambiar resolución, extender o duplicar el escritorio ya no cierra la sesión ni borra los trazos o su historial. Los dibujos conservan sus coordenadas en el escritorio; los que queden fuera de las pantallas conectadas se mantienen en memoria. Si se desconecta la pantalla elegida, el programa pasa a **Mouse**: elige otra pantalla y una herramienta para continuar. La paleta se recupera en una pantalla disponible.
+
+La captura y el cursor usan coordenadas físicas de pantalla, incluso con monitores a la izquierda o arriba de la principal y con escalas distintas. La implementación sigue el manejo de [DPI por ventana de Windows](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setthreaddpiawarenesscontext).
 
 ### Escribir texto sobre la pantalla
 
