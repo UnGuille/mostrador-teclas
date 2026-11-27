@@ -3654,11 +3654,11 @@ GuardarPosicionMiniTeclas(wParam, lParam, msg, hwnd) {
 }
 
 MenuMiniTeclas(*) {
-    menu := Menu()
-    menu.Add("Más grande (rueda arriba)", CambiarTamMiniTeclas.Bind(0.1))
-    menu.Add("Más pequeño (rueda abajo)", CambiarTamMiniTeclas.Bind(-0.1))
-    menu.Add("Ocultar mini teclas", AlternarTeclasMinimizadas)
-    menu.Show()
+    menuEmergente := Menu()
+    menuEmergente.Add("Más grande (rueda arriba)", CambiarTamMiniTeclas.Bind(0.1))
+    menuEmergente.Add("Más pequeño (rueda abajo)", CambiarTamMiniTeclas.Bind(-0.1))
+    menuEmergente.Add("Ocultar mini teclas", AlternarTeclasMinimizadas)
+    menuEmergente.Show()
 }
 
 ; Acceso a la paleta sin expandir el teclado. Ocultar conserva los dibujos.
@@ -6570,14 +6570,14 @@ ElegirPantallaDibujo(nombre, *) {
 
 MenuPantallasAnotaciones(*) {
     global AnotPantallaDibujo
-    menu := Menu(), mover := Menu(), dibujar := Menu()
-    menu.Add("Traer panel a esta pantalla  (Ctrl+Alt+V)",TraerPaletaAnotaciones)
+    menuEmergente := Menu(), mover := Menu(), dibujar := Menu()
+    menuEmergente.Add("Traer panel a esta pantalla  (Ctrl+Alt+V)",TraerPaletaAnotaciones)
     dibujar.Add("Todas las pantallas",ElegirPantallaDibujo.Bind("todas"))
     if AnotPantallaDibujo = "todas"
         dibujar.Check("Todas las pantallas")
     if AnotPantallaDibujo != "todas" && !IsObject(PantallaPorNombreAnotaciones(AnotPantallaDibujo)) {
-        menu.Add("Pantalla de dibujo desconectada · Mouse activo",(*) => 0)
-        menu.Disable("Pantalla de dibujo desconectada · Mouse activo")
+        menuEmergente.Add("Pantalla de dibujo desconectada · Mouse activo",(*) => 0)
+        menuEmergente.Disable("Pantalla de dibujo desconectada · Mouse activo")
     }
     actual := PantallaPaletaAnotaciones()
     for p in ListarPantallasAnotaciones() {
@@ -6589,9 +6589,9 @@ MenuPantallasAnotaciones(*) {
         if p.nombre = AnotPantallaDibujo
             dibujar.Check(etiqueta)
     }
-    menu.Add("Mover panel a",mover)
-    menu.Add("Dibujar en",dibujar)
-    menu.Show()
+    menuEmergente.Add("Mover panel a",mover)
+    menuEmergente.Add("Dibujar en",dibujar)
+    menuEmergente.Show()
 }
 
 TraerPaletaAnotaciones(*) {
